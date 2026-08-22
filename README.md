@@ -1,6 +1,6 @@
 # tinyquery
 
-Single-node SQL engine. You write a small subset of SQL; it parses it, builds an iterator plan, and runs it.
+Single node SQL engine. You write a small subset of SQL, it parses it, builds an iterator plan, and runs it.
 
 This is the same shape as Spark/Postgres (parse → plan → operators), on one machine, in memory.
 
