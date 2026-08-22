@@ -1,0 +1,21 @@
+[project]
+name = "tinyquery"
+version = "0.1.0"
+description = "A single-node SQL engine with iterator operators, hash join, and hash aggregate."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+tinyquery = "tinyquery.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
