@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from tinyquery.catalog import Catalog, Table
 from tinyquery.errors import TinyQueryError
-from tinyquery.expr import Aggregate, ColumnRef, Expr
+from tinyquery.expr import Aggregate, BinaryOp, ColumnRef, Expr
 from tinyquery.operators import Filter, HashAggregate, HashJoin, Operator, Project, Scan
 from tinyquery.parser import Query, TableRef
 from tinyquery.schema import Column, Schema
@@ -13,16 +13,30 @@ class Planner:
         self.catalog = catalog
 
     def plan(self, query: Query) -> Operator:
+        # Validate WHERE against the full joined schema first so ambiguous
+        # columns error the same way they would without pushdown.
+        full_schema = self._joined_schema(query)
+        conjuncts: list[Expr] = []
+        if query.where is not None:
+            conjuncts = _flatten_and(query.where)
+            for pred in conjuncts:
+                _require_resolvable(pred, full_schema)
+
         node = self._scan(query.from_table)
+        pushed, conjuncts = _take_resolvable(conjuncts, node.schema)
+        node = _with_filter(node, pushed)
+
         for join in query.joins:
             right = self._scan(join.table)
+            pushed, conjuncts = _take_resolvable(conjuncts, right.schema)
+            right = _with_filter(right, pushed)
             left_key, right_key = self._bind_join_keys(
                 node.schema, right.schema, join.left_key, join.right_key
             )
             node = HashJoin(node, right, left_key, right_key)
-        if query.where is not None:
-            _require_resolvable(query.where, node.schema)
-            node = Filter(node, query.where)
+
+        # Cross-table predicates (and ORs we could not split) stay above the join.
+        node = _with_filter(node, conjuncts)
 
         select = query.select
         if len(select) == 1 and select[0].is_star():
@@ -48,6 +62,15 @@ class Planner:
         table = self.catalog.get(ref.name)
         schema = _alias_schema(table, ref.alias)
         return Scan(ref.alias, schema, table.rows)
+
+    def _table_schema(self, ref: TableRef) -> Schema:
+        return _alias_schema(self.catalog.get(ref.name), ref.alias)
+
+    def _joined_schema(self, query: Query) -> Schema:
+        schema = self._table_schema(query.from_table)
+        for join in query.joins:
+            schema = schema.concat(self._table_schema(join.table))
+        return schema
 
     def _bind_join_keys(
         self,
@@ -132,3 +155,36 @@ def _require_resolvable(expr: Expr, schema: Schema) -> None:
 
 def _expr_in(expr: Expr, group_by: list[Expr]) -> bool:
     return any(str(expr) == str(other) for other in group_by)
+
+
+def _flatten_and(expr: Expr) -> list[Expr]:
+    if isinstance(expr, BinaryOp) and expr.op == "AND":
+        return _flatten_and(expr.left) + _flatten_and(expr.right)
+    return [expr]
+
+
+def _combine_and(predicates: list[Expr]) -> Expr | None:
+    if not predicates:
+        return None
+    node = predicates[0]
+    for pred in predicates[1:]:
+        node = BinaryOp("AND", node, pred)
+    return node
+
+
+def _take_resolvable(predicates: list[Expr], schema: Schema) -> tuple[list[Expr], list[Expr]]:
+    pushed: list[Expr] = []
+    leftover: list[Expr] = []
+    for pred in predicates:
+        if _resolvable(pred, schema):
+            pushed.append(pred)
+        else:
+            leftover.append(pred)
+    return pushed, leftover
+
+
+def _with_filter(node: Operator, predicates: list[Expr]) -> Operator:
+    combined = _combine_and(predicates)
+    if combined is None:
+        return node
+    return Filter(node, combined)

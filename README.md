@@ -16,7 +16,9 @@ Tables are CSV files. One file per table, header row required.
 
 ## What it does not do
 
-No nested queries, no `ORDER BY`/`LIMIT`, no outer joins, no disk spill, no optimizer. `WHERE` runs after joins, so it is correct but not always cheap. NULL join keys never match.
+No nested queries, no `ORDER BY`/`LIMIT`, no outer joins, no disk spill. NULL join keys never match.
+
+AND-clauses in `WHERE` that only mention one table are pushed below the join (so `o.year = 2024` filters orders before the hash table is built). Predicates that mention both sides, and `OR`s we cannot split, stay above the join.
 
 ## Run
 
@@ -42,6 +44,8 @@ SQL
 ```
 
 `HashJoin` builds a hash table on the left input, then probes with the right. `HashAggregate` does the same thing with group keys. Both need memory proportional to the build/group side.
+
+The planner splits `WHERE` on `AND` and attaches each piece to the lowest input whose columns can resolve it. That is the same idea as predicate pushdown in Spark; there is no cost-based optimizer.
 
 ## Example
 
