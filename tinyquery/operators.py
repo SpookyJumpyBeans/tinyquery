@@ -281,3 +281,115 @@ class HashAggregate(Operator):
 
     def children(self) -> list[Operator]:
         return [self.child]
+
+
+class _OrderKey:
+    """Compare values so NULLs sort last. One column can be DESC without flipping NULLs."""
+
+    def __init__(self, value: Any, descending: bool) -> None:
+        self.value = value
+        self.descending = descending
+
+    def __lt__(self, other: _OrderKey) -> bool:
+        if self.value is None and other.value is None:
+            return False
+        if self.value is None:
+            return False
+        if other.value is None:
+            return True
+        if self.descending:
+            return other.value < self.value
+        return self.value < other.value
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, _OrderKey):
+            return NotImplemented
+        return self.value == other.value
+
+
+class Sort(Operator):
+    """Blocking sort: read the child fully, then emit in order.
+
+    LIMIT after this still pays for the full sort. A real engine would keep a heap
+    of size LIMIT; we do not.
+    """
+
+    def __init__(self, child: Operator, keys: list[Expr], descending: list[bool]) -> None:
+        self.child = child
+        self.keys = keys
+        self.descending = descending
+        self.schema = child.schema
+        self._rows: list[Row] = []
+        self._i = 0
+
+    def open(self) -> None:
+        self.child.open()
+        rows: list[Row] = []
+        try:
+            while True:
+                row = self.child.next_row()
+                if row is None:
+                    break
+                rows.append(row)
+        finally:
+            self.child.close()
+        rows.sort(key=self._key)
+        self._rows = rows
+        self._i = 0
+
+    def _key(self, row: Row) -> tuple[_OrderKey, ...]:
+        return tuple(
+            _OrderKey(expr.eval(row, self.schema), desc)
+            for expr, desc in zip(self.keys, self.descending, strict=True)
+        )
+
+    def next_row(self) -> Row | None:
+        if self._i >= len(self._rows):
+            return None
+        row = self._rows[self._i]
+        self._i += 1
+        return row
+
+    def close(self) -> None:
+        self._rows = []
+
+    def explain_label(self) -> str:
+        parts = []
+        for expr, desc in zip(self.keys, self.descending, strict=True):
+            parts.append(f"{expr} {'DESC' if desc else 'ASC'}")
+        return f"Sort {', '.join(parts)}"
+
+    def children(self) -> list[Operator]:
+        return [self.child]
+
+
+class Limit(Operator):
+    """Stop after n rows. Cheap if the child is already streaming; not a top-k."""
+
+    def __init__(self, child: Operator, count: int) -> None:
+        self.child = child
+        self.count = count
+        self.schema = child.schema
+        self._emitted = 0
+
+    def open(self) -> None:
+        self._emitted = 0
+        self.child.open()
+
+    def next_row(self) -> Row | None:
+        if self._emitted >= self.count:
+            return None
+        row = self.child.next_row()
+        if row is None:
+            return None
+        self._emitted += 1
+        return row
+
+    def close(self) -> None:
+        self.child.close()
+
+    def explain_label(self) -> str:
+        return f"Limit {self.count}"
+
+    def children(self) -> list[Operator]:
+        return [self.child]

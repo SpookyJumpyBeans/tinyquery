@@ -28,6 +28,10 @@ class Schema:
             for i, col in enumerate(self.columns)
             if col.name == name and (table is None or col.table == table)
         ]
+        # Project names aliases like "o.region"; ORDER BY o.region still has to hit them.
+        if not matches and table is not None:
+            qualified = f"{table}.{name}"
+            matches = [i for i, col in enumerate(self.columns) if col.name == qualified]
         label = f"{table}.{name}" if table else name
         if not matches:
             raise TinyQueryError(f"unknown column {label}")

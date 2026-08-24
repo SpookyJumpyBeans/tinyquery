@@ -29,12 +29,20 @@ class JoinClause:
 
 
 @dataclass
+class OrderTerm:
+    expr: Expr
+    descending: bool = False
+
+
+@dataclass
 class Query:
     select: list[SelectItem]
     from_table: TableRef
     joins: list[JoinClause] = field(default_factory=list)
     where: Expr | None = None
     group_by: list[Expr] = field(default_factory=list)
+    order_by: list[OrderTerm] = field(default_factory=list)
+    limit: int | None = None
 
 
 KEYWORDS = {
@@ -55,6 +63,21 @@ KEYWORDS = {
     "MIN",
     "MAX",
     "AVG",
+    "ORDER",
+    "LIMIT",
+    "ASC",
+    "DESC",
+}
+
+_STOP_ALIAS = {
+    "FROM",
+    "WHERE",
+    "GROUP",
+    "JOIN",
+    "INNER",
+    "ORDER",
+    "LIMIT",
+    "ON",
 }
 
 COMPARISONS = {"=", "!=", "<", ">", "<=", ">="}
@@ -101,7 +124,21 @@ class Parser:
             group_by.append(self._value_expr())
             while self._match(","):
                 group_by.append(self._value_expr())
-        return Query(select, from_table, joins, where, group_by)
+        order_by: list[OrderTerm] = []
+        if self._match("ORDER"):
+            self._expect("BY")
+            order_by.append(self._order_term())
+            while self._match(","):
+                order_by.append(self._order_term())
+        limit = None
+        if self._match("LIMIT"):
+            token = self._expect("NUMBER")
+            if not isinstance(token.value, int):
+                raise TinyQueryError("LIMIT must be an integer")
+            if token.value < 0:
+                raise TinyQueryError("LIMIT must be >= 0")
+            limit = token.value
+        return Query(select, from_table, joins, where, group_by, order_by, limit)
 
     def _match_join(self) -> bool:
         if self._check("INNER"):
@@ -134,7 +171,7 @@ class Parser:
             if self._peek().value not in {"FROM"}:
                 # only take bare alias if next is not a clause keyword
                 nxt = str(self._peek().value).upper()
-                if nxt not in {"FROM", "WHERE", "GROUP", "JOIN", "INNER"}:
+                if nxt not in _STOP_ALIAS:
                     alias = str(self._advance().value)
         return SelectItem(expr, alias)
 
@@ -156,9 +193,18 @@ class Parser:
             alias = str(self._expect("IDENT").value)
         elif self._check("IDENT"):
             nxt = str(self._peek().value).upper()
-            if nxt not in {"JOIN", "INNER", "ON", "WHERE", "GROUP", "SELECT"}:
+            if nxt not in _STOP_ALIAS and nxt != "SELECT":
                 alias = str(self._advance().value)
         return TableRef(name, alias)
+
+    def _order_term(self) -> OrderTerm:
+        expr = self._value_expr()
+        descending = False
+        if self._match("DESC"):
+            descending = True
+        else:
+            self._match("ASC")
+        return OrderTerm(expr, descending)
 
     def _or_expr(self) -> Expr:
         expr = self._and_expr()

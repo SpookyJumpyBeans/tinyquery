@@ -3,7 +3,7 @@ from __future__ import annotations
 from tinyquery.catalog import Catalog, Table
 from tinyquery.errors import TinyQueryError
 from tinyquery.expr import Aggregate, BinaryOp, ColumnRef, Expr
-from tinyquery.operators import Filter, HashAggregate, HashJoin, Operator, Project, Scan
+from tinyquery.operators import Filter, HashAggregate, HashJoin, Limit, Operator, Project, Scan, Sort
 from tinyquery.parser import Query, TableRef
 from tinyquery.schema import Column, Schema
 
@@ -42,12 +42,14 @@ class Planner:
         if len(select) == 1 and select[0].is_star():
             if query.group_by or any(item.is_aggregate() for item in select):
                 raise TinyQueryError("SELECT * cannot be mixed with aggregates / GROUP BY")
-            return node
+            return self._apply_order_limit(node, query)
 
-        has_agg = any(item.is_aggregate() for item in select)
-        if has_agg or query.group_by:
-            return self._plan_aggregate(node, query)
+        if any(item.is_aggregate() for item in select) or query.group_by:
+            node = self._plan_aggregate(node, query)
+            return self._apply_order_limit(node, query)
 
+        # Sort on the input so ORDER BY year works even if year is not selected.
+        node = self._apply_sort(node, query)
         exprs: list[Expr] = []
         names: list[str] = []
         for item in select:
@@ -56,7 +58,10 @@ class Planner:
             _require_resolvable(item.expr, node.schema)
             exprs.append(item.expr)
             names.append(item.output_name())
-        return Project(node, exprs, names)
+        node = Project(node, exprs, names)
+        if query.limit is not None:
+            node = Limit(node, query.limit)
+        return node
 
     def _scan(self, ref: TableRef) -> Scan:
         table = self.catalog.get(ref.name)
@@ -129,6 +134,21 @@ class Planner:
             else:
                 out_exprs.append(ColumnRef(str(item.expr)))
         return Project(node, out_exprs, out_names)
+
+    def _apply_sort(self, node: Operator, query: Query) -> Operator:
+        if not query.order_by:
+            return node
+        keys = [term.expr for term in query.order_by]
+        descending = [term.descending for term in query.order_by]
+        for expr in keys:
+            _require_resolvable(expr, node.schema)
+        return Sort(node, keys, descending)
+
+    def _apply_order_limit(self, node: Operator, query: Query) -> Operator:
+        node = self._apply_sort(node, query)
+        if query.limit is not None:
+            node = Limit(node, query.limit)
+        return node
 
 
 def plan(catalog: Catalog, query: Query) -> Operator:
