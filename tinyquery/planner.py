@@ -3,7 +3,17 @@ from __future__ import annotations
 from tinyquery.catalog import Catalog, Table
 from tinyquery.errors import TinyQueryError
 from tinyquery.expr import Aggregate, BinaryOp, ColumnRef, Expr
-from tinyquery.operators import Filter, HashAggregate, HashJoin, Limit, Operator, Project, Scan, Sort
+from tinyquery.operators import (
+    Filter,
+    HashAggregate,
+    HashJoin,
+    Limit,
+    Operator,
+    Project,
+    Scan,
+    Sort,
+    TopK,
+)
 from tinyquery.parser import Query, TableRef
 from tinyquery.schema import Column, Schema
 
@@ -48,8 +58,17 @@ class Planner:
             node = self._plan_aggregate(node, query)
             return self._apply_order_limit(node, query)
 
-        # Sort on the input so ORDER BY year works even if year is not selected.
-        node = self._apply_sort(node, query)
+        # ORDER BY may reference columns that Project drops, so top-k / sort
+        # run on the input schema first.
+        if query.order_by and query.limit is not None:
+            keys = [term.expr for term in query.order_by]
+            descending = [term.descending for term in query.order_by]
+            for expr in keys:
+                _require_resolvable(expr, node.schema)
+            node = TopK(node, keys, descending, query.limit)
+        else:
+            node = self._apply_sort(node, query)
+
         exprs: list[Expr] = []
         names: list[str] = []
         for item in select:
@@ -59,7 +78,7 @@ class Planner:
             exprs.append(item.expr)
             names.append(item.output_name())
         node = Project(node, exprs, names)
-        if query.limit is not None:
+        if query.limit is not None and not query.order_by:
             node = Limit(node, query.limit)
         return node
 
@@ -145,6 +164,12 @@ class Planner:
         return Sort(node, keys, descending)
 
     def _apply_order_limit(self, node: Operator, query: Query) -> Operator:
+        if query.order_by and query.limit is not None:
+            keys = [term.expr for term in query.order_by]
+            descending = [term.descending for term in query.order_by]
+            for expr in keys:
+                _require_resolvable(expr, node.schema)
+            return TopK(node, keys, descending, query.limit)
         node = self._apply_sort(node, query)
         if query.limit is not None:
             node = Limit(node, query.limit)

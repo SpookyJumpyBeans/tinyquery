@@ -43,11 +43,23 @@ def test_order_then_limit():
     assert rows == [("east", 20)]
 
 
-def test_explain_sort_and_limit():
+def test_explain_order_limit_uses_topk():
     plan = explain(sample_catalog(), "SELECT id FROM orders ORDER BY id DESC LIMIT 1")
+    assert "TopK 1 by id DESC" in plan
+    assert "Sort " not in plan
+    assert "Limit 1" not in plan
+
+
+def test_explain_limit_alone_is_not_topk():
+    plan = explain(sample_catalog(), "SELECT id FROM orders LIMIT 1")
     assert "Limit 1" in plan
-    assert "Sort id DESC" in plan
-    assert plan.index("Limit 1") < plan.index("Sort id DESC")
+    assert "TopK" not in plan
+
+
+def test_explain_order_alone_is_sort():
+    plan = explain(sample_catalog(), "SELECT id FROM orders ORDER BY id")
+    assert "Sort id ASC" in plan
+    assert "TopK" not in plan
 
 
 def test_parse_order_limit():

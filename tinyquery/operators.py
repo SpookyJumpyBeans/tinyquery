@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import heapq
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from typing import Any
@@ -390,6 +391,93 @@ class Limit(Operator):
 
     def explain_label(self) -> str:
         return f"Limit {self.count}"
+
+    def children(self) -> list[Operator]:
+        return [self.child]
+
+
+class _WorseKey:
+    """Heap ordering: smaller means worse (should be evicted from the top-k first)."""
+
+    def __init__(self, keys: tuple[_OrderKey, ...]) -> None:
+        self.keys = keys
+
+    def __lt__(self, other: _WorseKey) -> bool:
+        return other.keys < self.keys
+
+
+class TopK(Operator):
+    """ORDER BY + LIMIT without a full sort: keep a heap of the best k rows.
+
+    Still reads the whole child once, but memory is O(k) instead of O(n).
+    """
+
+    def __init__(
+        self,
+        child: Operator,
+        keys: list[Expr],
+        descending: list[bool],
+        count: int,
+    ) -> None:
+        self.child = child
+        self.keys = keys
+        self.descending = descending
+        self.count = count
+        self.schema = child.schema
+        self._rows: list[Row] = []
+        self._i = 0
+
+    def open(self) -> None:
+        self._rows = []
+        self._i = 0
+        if self.count <= 0:
+            self.child.open()
+            self.child.close()
+            return
+
+        heap: list[tuple[_WorseKey, int, Row]] = []
+        seq = 0
+        self.child.open()
+        try:
+            while True:
+                row = self.child.next_row()
+                if row is None:
+                    break
+                order = self._order_keys(row)
+                item = (_WorseKey(order), seq, row)
+                seq += 1
+                if len(heap) < self.count:
+                    heapq.heappush(heap, item)
+                elif order < heap[0][0].keys:
+                    heapq.heapreplace(heap, item)
+        finally:
+            self.child.close()
+
+        rows = [entry[2] for entry in heap]
+        rows.sort(key=self._order_keys)
+        self._rows = rows
+
+    def _order_keys(self, row: Row) -> tuple[_OrderKey, ...]:
+        return tuple(
+            _OrderKey(expr.eval(row, self.schema), desc)
+            for expr, desc in zip(self.keys, self.descending, strict=True)
+        )
+
+    def next_row(self) -> Row | None:
+        if self._i >= len(self._rows):
+            return None
+        row = self._rows[self._i]
+        self._i += 1
+        return row
+
+    def close(self) -> None:
+        self._rows = []
+
+    def explain_label(self) -> str:
+        parts = []
+        for expr, desc in zip(self.keys, self.descending, strict=True):
+            parts.append(f"{expr} {'DESC' if desc else 'ASC'}")
+        return f"TopK {self.count} by {', '.join(parts)}"
 
     def children(self) -> list[Operator]:
         return [self.child]
