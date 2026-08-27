@@ -43,10 +43,12 @@ class Query:
     group_by: list[Expr] = field(default_factory=list)
     order_by: list[OrderTerm] = field(default_factory=list)
     limit: int | None = None
+    distinct: bool = False
 
 
 KEYWORDS = {
     "SELECT",
+    "DISTINCT",
     "FROM",
     "JOIN",
     "INNER",
@@ -104,6 +106,7 @@ class Parser:
 
     def _query(self) -> Query:
         self._expect("SELECT")
+        distinct = self._match("DISTINCT")
         select = self._select_list()
         self._expect("FROM")
         from_table = self._table_ref()
@@ -138,7 +141,7 @@ class Parser:
             if token.value < 0:
                 raise TinyQueryError("LIMIT must be >= 0")
             limit = token.value
-        return Query(select, from_table, joins, where, group_by, order_by, limit)
+        return Query(select, from_table, joins, where, group_by, order_by, limit, distinct)
 
     def _match_join(self) -> bool:
         if self._check("INNER"):

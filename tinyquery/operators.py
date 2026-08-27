@@ -396,6 +396,39 @@ class Limit(Operator):
         return [self.child]
 
 
+class Distinct(Operator):
+    """Drop duplicate output rows. Memory grows with the number of unique rows."""
+
+    def __init__(self, child: Operator) -> None:
+        self.child = child
+        self.schema = child.schema
+        self._seen: set[Row] = set()
+
+    def open(self) -> None:
+        self._seen = set()
+        self.child.open()
+
+    def next_row(self) -> Row | None:
+        while True:
+            row = self.child.next_row()
+            if row is None:
+                return None
+            if row in self._seen:
+                continue
+            self._seen.add(row)
+            return row
+
+    def close(self) -> None:
+        self._seen = set()
+        self.child.close()
+
+    def explain_label(self) -> str:
+        return "Distinct"
+
+    def children(self) -> list[Operator]:
+        return [self.child]
+
+
 class _WorseKey:
     """Heap ordering: smaller means worse (should be evicted from the top-k first)."""
 

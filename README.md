@@ -7,6 +7,7 @@ This is the same shape as Spark/Postgres (parse → plan → operators), on one 
 ## What works
 
 - `SELECT` columns or `*`
+- `SELECT DISTINCT`
 - `FROM` + `JOIN ... ON a = b` (inner equijoin)
 - `WHERE` with `= != < > <= >= AND OR NOT`
 - `GROUP BY` with `COUNT`, `SUM`, `MIN`, `MAX`, `AVG`
@@ -40,7 +41,7 @@ pytest
 ```text
 SQL
   → parser (recursive descent)
-  → planner (Scan / Filter / HashJoin / HashAggregate / Project / Sort / TopK / Limit)
+  → planner (Scan / Filter / HashJoin / HashAggregate / Project / Distinct / Sort / TopK / Limit)
   → Volcano iterators: open() / next_row() / close()
 ```
 
