@@ -4,6 +4,7 @@ from tinyquery.catalog import Catalog, Table
 from tinyquery.errors import TinyQueryError
 from tinyquery.expr import Aggregate, BinaryOp, ColumnRef, Expr
 from tinyquery.operators import (
+    Distinct,
     Filter,
     HashAggregate,
     HashJoin,
@@ -49,25 +50,30 @@ class Planner:
         node = _with_filter(node, conjuncts)
 
         select = query.select
+        if query.distinct and (query.group_by or any(item.is_aggregate() for item in select)):
+            raise TinyQueryError("SELECT DISTINCT cannot be mixed with aggregates / GROUP BY")
+
         if len(select) == 1 and select[0].is_star():
             if query.group_by or any(item.is_aggregate() for item in select):
                 raise TinyQueryError("SELECT * cannot be mixed with aggregates / GROUP BY")
-            return self._apply_order_limit(node, query)
+            return self._apply_distinct_order_limit(node, query)
 
         if any(item.is_aggregate() for item in select) or query.group_by:
             node = self._plan_aggregate(node, query)
             return self._apply_order_limit(node, query)
 
-        # ORDER BY may reference columns that Project drops, so top-k / sort
-        # run on the input schema first.
-        if query.order_by and query.limit is not None:
-            keys = [term.expr for term in query.order_by]
-            descending = [term.descending for term in query.order_by]
-            for expr in keys:
-                _require_resolvable(expr, node.schema)
-            node = TopK(node, keys, descending, query.limit)
-        else:
-            node = self._apply_sort(node, query)
+        # Without DISTINCT, sort/topk before Project so ORDER BY can use
+        # columns that are not selected. With DISTINCT, project first, then
+        # dedupe, then order/limit (SQL evaluation order).
+        if not query.distinct:
+            if query.order_by and query.limit is not None:
+                keys = [term.expr for term in query.order_by]
+                descending = [term.descending for term in query.order_by]
+                for expr in keys:
+                    _require_resolvable(expr, node.schema)
+                node = TopK(node, keys, descending, query.limit)
+            else:
+                node = self._apply_sort(node, query)
 
         exprs: list[Expr] = []
         names: list[str] = []
@@ -78,6 +84,9 @@ class Planner:
             exprs.append(item.expr)
             names.append(item.output_name())
         node = Project(node, exprs, names)
+        if query.distinct:
+            node = Distinct(node)
+            return self._apply_order_limit(node, query)
         if query.limit is not None and not query.order_by:
             node = Limit(node, query.limit)
         return node
@@ -174,6 +183,12 @@ class Planner:
         if query.limit is not None:
             node = Limit(node, query.limit)
         return node
+
+    def _apply_distinct_order_limit(self, node: Operator, query: Query) -> Operator:
+        # Distinct before order/limit so ORDER BY / LIMIT see unique rows.
+        if query.distinct:
+            node = Distinct(node)
+        return self._apply_order_limit(node, query)
 
 
 def plan(catalog: Catalog, query: Query) -> Operator:
