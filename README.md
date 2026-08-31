@@ -13,8 +13,50 @@ This is the same shape as Spark/Postgres (parse → plan → operators), on one 
 - `GROUP BY` with `COUNT`, `SUM`, `MIN`, `MAX`, `AVG`
 - `ORDER BY` (`ASC` / `DESC`) and `LIMIT`
 - `EXPLAIN` via `--explain` (prints the physical plan)
+- Reading [tinydelta](https://github.com/SpookyJumpyBeans/tinydelta) tables, at
+  the latest version or any older one
 
-Tables are CSV files. One file per table, header row required.
+Tables are CSV files -- one per table, header row required -- or tinydelta
+tables, where a commit log decides which data files a scan can see.
+
+## Querying a tinydelta table
+
+`tinydelta` is the storage layer: a directory of data files plus an atomic JSON
+commit log. `tinyquery` is the engine. Together they are the two halves of a
+very small lakehouse -- storage decides *what is visible*, the engine decides
+*how to compute it*.
+
+```bash
+pip install -e ".[delta]"
+
+python -m tinyquery --table orders=./orders \
+  "SELECT region, COUNT(id) AS n FROM orders GROUP BY region ORDER BY n DESC"
+```
+
+Because the log is the source of truth, a scan only ever sees rows some commit
+published -- never a half-written file, and never one a later `overwrite`
+removed. Pointing at an older version makes time travel a plain `SELECT`:
+
+```bash
+python -m tinyquery --table orders=./orders --version 1 \
+  "SELECT region, COUNT(id) AS n FROM orders GROUP BY region ORDER BY n DESC"
+```
+
+```text
+latest (v2)              --version 1
+
+region | n               region | n
+-------+--               -------+--
+west   | 2               west   | 1
+east   | 1               east   | 1
+north  | 1               (2 rows)
+(3 rows)
+```
+
+`--table` is repeatable and mixes with `--data`, so a tinydelta table joins
+against a CSV like any other pair of tables. One difference from CSV: the log
+carries a declared schema, so column types come from the table rather than from
+guessing at the text.
 
 ## What it does not do
 

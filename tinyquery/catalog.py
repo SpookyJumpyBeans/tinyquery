@@ -55,6 +55,49 @@ class Catalog:
         for csv_path in sorted(folder.glob("*.csv")):
             self.load_csv(csv_path.stem, csv_path)
 
+    def load_delta(
+        self,
+        name: str,
+        path: str | Path,
+        alias: str | None = None,
+        version: int | None = None,
+    ) -> int:
+        """Register a tinydelta table, optionally at an older version.
+
+        The commit log decides which data files are visible, so a scan only ever
+        sees rows some commit published -- never a half-written file, and never
+        one a later overwrite removed. Passing `version` reads that snapshot
+        instead of the latest, which is what makes time travel a plain SELECT.
+
+        Returns the version actually read, so callers can report it.
+        """
+        try:
+            from tinydelta.table import DeltaTable
+        except ImportError as exc:  # pragma: no cover - depends on install extras
+            raise TinyQueryError(
+                "reading tinydelta tables needs the delta extra: "
+                'pip install "tinyquery[delta]"'
+            ) from exc
+
+        from tinydelta.errors import TinyDeltaError
+
+        try:
+            table = DeltaTable.open(Path(path))
+            snapshot = table.snapshot(version)
+            records = table.read(version)
+        except TinyDeltaError as exc:
+            raise TinyQueryError(f"tinydelta: {exc}") from exc
+
+        # Unlike CSV, the log carries a declared schema, so column order and
+        # types come from the table rather than from guessing at the text.
+        names = snapshot.schema.names()
+        rows = [tuple(record.get(column) for column in names) for record in records]
+
+        label = alias or name
+        schema = Schema(tuple(Column(column, table=label) for column in names))
+        self.register(name, schema, rows)
+        return snapshot.version
+
     def get(self, name: str) -> Table:
         if name not in self.tables:
             raise TinyQueryError(f"unknown table {name}")
