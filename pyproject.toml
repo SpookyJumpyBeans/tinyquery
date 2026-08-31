@@ -8,6 +8,8 @@ dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Reading tinydelta tables is optional; the CSV path stays dependency-free.
+delta = ["tinydelta @ git+https://github.com/SpookyJumpyBeans/tinydelta.git"]
 
 [project.scripts]
 tinyquery = "tinyquery.cli:main"
