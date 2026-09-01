@@ -179,6 +179,86 @@ class HashJoin(Operator):
         return [self.left, self.right]
 
 
+class NestedLoopJoin(Operator):
+    """Inner equijoin that rescans the right side for every left row.
+
+    The planner never chooses this. It exists as the baseline HashJoin is
+    measured against: same results, same NULL semantics, O(n*m) comparisons
+    instead of O(n+m), which is what `benchmarks/join_benchmark.py` quantifies.
+
+    The right input is materialised once on open() rather than re-executed per
+    outer row, so the numbers isolate the cost of the comparisons themselves
+    and not the cost of re-running a scan.
+    """
+
+    def __init__(
+        self,
+        left: Operator,
+        right: Operator,
+        left_key: Expr,
+        right_key: Expr,
+    ) -> None:
+        self.left = left
+        self.right = right
+        self.left_key = left_key
+        self.right_key = right_key
+        self.schema = left.schema.concat(right.schema)
+        self._right_rows: list[Row] = []
+        self._left_row: Row | None = None
+        self._left_key_value: Any = None
+        self._right_i = 0
+
+    def open(self) -> None:
+        self._right_rows = []
+        self.right.open()
+        try:
+            while True:
+                row = self.right.next_row()
+                if row is None:
+                    break
+                self._right_rows.append(row)
+        finally:
+            self.right.close()
+
+        self.left.open()
+        self._left_row = None
+        self._right_i = 0
+
+    def next_row(self) -> Row | None:
+        while True:
+            if self._left_row is None:
+                self._left_row = self.left.next_row()
+                if self._left_row is None:
+                    return None
+                self._left_key_value = self.left_key.eval(
+                    self._left_row, self.left.schema
+                )
+                self._right_i = 0
+                # NULL never matches, so skip the whole inner pass for this row.
+                if self._left_key_value is None:
+                    self._left_row = None
+                    continue
+
+            while self._right_i < len(self._right_rows):
+                right_row = self._right_rows[self._right_i]
+                self._right_i += 1
+                key = self.right_key.eval(right_row, self.right.schema)
+                if key is not None and key == self._left_key_value:
+                    return self._left_row + right_row
+
+            self._left_row = None
+
+    def close(self) -> None:
+        self.left.close()
+        self._right_rows = []
+
+    def explain_label(self) -> str:
+        return f"NestedLoopJoin {self.left_key} = {self.right_key}"
+
+    def children(self) -> list[Operator]:
+        return [self.left, self.right]
+
+
 class _AggState:
     def __init__(self, spec: Aggregate) -> None:
         self.spec = spec
