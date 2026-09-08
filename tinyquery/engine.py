@@ -7,8 +7,8 @@ from tinyquery.planner import plan
 from tinyquery.schema import Row, Schema
 
 
-def compile_sql(catalog: Catalog, sql: str) -> Operator:
-    return plan(catalog, parse(sql))
+def compile_sql(catalog: Catalog, sql: str, reorder: bool = True) -> Operator:
+    return plan(catalog, parse(sql), reorder=reorder)
 
 
 def collect(operator: Operator) -> tuple[list[Row], Schema]:
@@ -25,12 +25,12 @@ def collect(operator: Operator) -> tuple[list[Row], Schema]:
     return rows, operator.schema
 
 
-def execute(catalog: Catalog, sql: str) -> tuple[list[Row], Schema]:
-    return collect(compile_sql(catalog, sql))
+def execute(catalog: Catalog, sql: str, reorder: bool = True) -> tuple[list[Row], Schema]:
+    return collect(compile_sql(catalog, sql, reorder=reorder))
 
 
-def explain(catalog: Catalog, sql: str) -> str:
-    return format_explain(compile_sql(catalog, sql))
+def explain(catalog: Catalog, sql: str, reorder: bool = True) -> str:
+    return format_explain(compile_sql(catalog, sql, reorder=reorder))
 
 
 def format_explain(operator: Operator, indent: int = 0) -> str:

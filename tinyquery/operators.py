@@ -179,6 +179,43 @@ class HashJoin(Operator):
         return [self.left, self.right]
 
 
+class Reorder(Operator):
+    """Permute columns back into the order the query declared them.
+
+    The join optimiser is free to execute joins in whatever order is cheapest,
+    which moves columns around: joining c before b puts c's columns in the
+    middle of the row. Everything above the join still expects `FROM a JOIN b
+    JOIN c` to produce a's columns, then b's, then c's, and SELECT * reads the
+    schema positionally.
+
+    Project cannot do this job because it flattens columns to bare names and
+    drops the table qualifier, which would break `o.region` further up.
+    """
+
+    def __init__(self, child: Operator, indices: list[int], schema: Schema) -> None:
+        self.child = child
+        self.indices = indices
+        self.schema = schema
+
+    def open(self) -> None:
+        self.child.open()
+
+    def next_row(self) -> Row | None:
+        row = self.child.next_row()
+        if row is None:
+            return None
+        return tuple(row[i] for i in self.indices)
+
+    def close(self) -> None:
+        self.child.close()
+
+    def explain_label(self) -> str:
+        return "Reorder to declared column order"
+
+    def children(self) -> list[Operator]:
+        return [self.child]
+
+
 class NestedLoopJoin(Operator):
     """Inner equijoin that rescans the right side for every left row.
 

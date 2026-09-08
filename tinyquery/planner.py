@@ -3,6 +3,13 @@ from __future__ import annotations
 from tinyquery.catalog import Catalog, Table
 from tinyquery.errors import TinyQueryError
 from tinyquery.expr import Aggregate, BinaryOp, ColumnRef, Expr
+from tinyquery.cost import (
+    JoinEdge,
+    JoinPlan,
+    analyze,
+    choose_join_order,
+    estimate_filtered_rows,
+)
 from tinyquery.operators import (
     Distinct,
     Filter,
@@ -11,6 +18,7 @@ from tinyquery.operators import (
     Limit,
     Operator,
     Project,
+    Reorder,
     Scan,
     Sort,
     TopK,
@@ -20,8 +28,12 @@ from tinyquery.schema import Column, Schema
 
 
 class Planner:
-    def __init__(self, catalog: Catalog) -> None:
+    def __init__(self, catalog: Catalog, reorder: bool = True) -> None:
         self.catalog = catalog
+        # Off means "join in the order written", which is what the planner did
+        # before the cost model existed. Tests and the benchmark use it to
+        # compare the two plans on identical inputs.
+        self.reorder = reorder
 
     def plan(self, query: Query) -> Operator:
         # Validate WHERE against the full joined schema first so ambiguous
@@ -33,18 +45,7 @@ class Planner:
             for pred in conjuncts:
                 _require_resolvable(pred, full_schema)
 
-        node = self._scan(query.from_table)
-        pushed, conjuncts = _take_resolvable(conjuncts, node.schema)
-        node = _with_filter(node, pushed)
-
-        for join in query.joins:
-            right = self._scan(join.table)
-            pushed, conjuncts = _take_resolvable(conjuncts, right.schema)
-            right = _with_filter(right, pushed)
-            left_key, right_key = self._bind_join_keys(
-                node.schema, right.schema, join.left_key, join.right_key
-            )
-            node = HashJoin(node, right, left_key, right_key)
+        node, conjuncts = self._plan_joins(query, conjuncts)
 
         # Cross-table predicates (and ORs we could not split) stay above the join.
         node = _with_filter(node, conjuncts)
@@ -90,6 +91,83 @@ class Planner:
         if query.limit is not None and not query.order_by:
             node = Limit(node, query.limit)
         return node
+
+    def _plan_joins(
+        self, query: Query, conjuncts: list[Expr]
+    ) -> tuple[Operator, list[Expr]]:
+        """Build the join tree, reordering it when the cost model says to.
+
+        Filters are pushed onto each base table first, because a filter that
+        removes 90% of a table changes which join order is cheapest.
+        """
+        refs = [query.from_table] + [join.table for join in query.joins]
+        inputs: dict[str, Operator] = {}
+        filters: dict[str, list[Expr]] = {}
+        for ref in refs:
+            scan = self._scan(ref)
+            pushed, conjuncts = _take_resolvable(conjuncts, scan.schema)
+            filters[ref.alias] = pushed
+            inputs[ref.alias] = _with_filter(scan, pushed)
+
+        plan = self._choose_order(query, refs, filters)
+        if plan is None:
+            node = self._join_in_written_order(query, inputs)
+            return node, conjuncts
+
+        node = self._join_in_plan_order(query, inputs, plan)
+        return _restore_declared_order(node, refs, inputs), conjuncts
+
+    def _join_in_written_order(
+        self, query: Query, inputs: dict[str, Operator]
+    ) -> Operator:
+        node = inputs[query.from_table.alias]
+        for join in query.joins:
+            right = inputs[join.table.alias]
+            left_key, right_key = self._bind_join_keys(
+                node.schema, right.schema, join.left_key, join.right_key
+            )
+            node = HashJoin(node, right, left_key, right_key)
+        return node
+
+    def _join_in_plan_order(
+        self, query: Query, inputs: dict[str, Operator], plan: JoinPlan
+    ) -> Operator:
+        node = inputs[plan.order[0]]
+        for step in plan.steps:
+            right = inputs[step.alias]
+            left_key, right_key = self._bind_join_keys(
+                node.schema, right.schema, step.edge.left_key, step.edge.right_key
+            )
+            node = HashJoin(node, right, left_key, right_key)
+        return node
+
+    def _choose_order(
+        self, query: Query, refs: list[TableRef], filters: dict[str, list[Expr]]
+    ) -> JoinPlan | None:
+        """Ask the cost model for an order, or None to keep the written one."""
+        if not self.reorder:
+            return None
+        edges: list[JoinEdge] = []
+        for join in query.joins:
+            left = _qualified_ref(join.left_key)
+            right = _qualified_ref(join.right_key)
+            if left is None or right is None:
+                # A key we cannot attribute to one table; do not reorder.
+                return None
+            edges.append(
+                JoinEdge(left[0], join.left_key, right[0], join.right_key)
+            )
+
+        base_rows: dict[str, float] = {}
+        key_ndv: dict[tuple[str, str], int] = {}
+        for ref in refs:
+            table = self.catalog.get(ref.name)
+            stats = analyze(table.schema, table.rows)
+            base_rows[ref.alias] = estimate_filtered_rows(filters[ref.alias], stats)
+            for column in table.schema.columns:
+                key_ndv[(ref.alias, column.name)] = stats.distinct(column.name)
+
+        return choose_join_order([ref.alias for ref in refs], base_rows, key_ndv, edges)
 
     def _scan(self, ref: TableRef) -> Scan:
         table = self.catalog.get(ref.name)
@@ -191,8 +269,39 @@ class Planner:
         return self._apply_order_limit(node, query)
 
 
-def plan(catalog: Catalog, query: Query) -> Operator:
-    return Planner(catalog).plan(query)
+def _qualified_ref(expr: Expr) -> tuple[str, str] | None:
+    """(table alias, column) for a qualified column reference, else None."""
+    if isinstance(expr, ColumnRef) and expr.table is not None:
+        return expr.table, expr.name
+    return None
+
+
+def _restore_declared_order(
+    node: Operator, refs: list[TableRef], inputs: dict[str, Operator]
+) -> Operator:
+    """Put columns back where `FROM a JOIN b JOIN c` says they belong.
+
+    Executing joins out of order moves columns around inside the row. Anything
+    reading positionally above this point, SELECT * in particular, expects the
+    declared order, so undo the permutation before handing the rows up.
+    """
+    declared: list[tuple[str | None, str]] = []
+    for ref in refs:
+        for column in inputs[ref.alias].schema.columns:
+            declared.append((column.table, column.name))
+
+    executed = [(column.table, column.name) for column in node.schema.columns]
+    if executed == declared:
+        return node
+
+    positions = {key: i for i, key in enumerate(executed)}
+    indices = [positions[key] for key in declared]
+    schema = Schema(tuple(Column(name, table=table) for table, name in declared))
+    return Reorder(node, indices, schema)
+
+
+def plan(catalog: Catalog, query: Query, reorder: bool = True) -> Operator:
+    return Planner(catalog, reorder=reorder).plan(query)
 
 
 def _alias_schema(table: Table, alias: str) -> Schema:

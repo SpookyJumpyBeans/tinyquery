@@ -93,6 +93,51 @@ def time_pushdown(orders: Scan, lineitems: Scan, repeat: int) -> tuple[float, fl
     return below, above, count
 
 
+def time_join_order(n_facts: int, n_dim: int, n_tiny: int, repeat: int) -> tuple[float, float, int]:
+    """Cost-based join order versus joining in the order written.
+
+    A fact table joined to a wide dimension and a heavily filtered tiny one.
+    Written order pays for the wide join across every fact row; the cost model
+    joins the filtered table first and shrinks the input to everything after.
+    """
+    from tinyquery.catalog import Catalog
+    from tinyquery.engine import execute
+    from tinyquery.schema import Column, Schema
+
+    catalog = Catalog()
+    for name, columns, rows in (
+        ("f", ["id", "dim_id", "tiny_id", "amount"],
+         [(i, i % n_dim, i % n_tiny, i) for i in range(n_facts)]),
+        ("d", ["id", "label"], [(i, f"d{i}") for i in range(n_dim)]),
+        ("t", ["id", "label"], [(i, f"t{i}") for i in range(n_tiny)]),
+    ):
+        catalog.register(
+            name, Schema(tuple(Column(c, table=name) for c in columns)), rows
+        )
+
+    sql = """
+        SELECT f.id, d.label, t.label
+        FROM f
+        JOIN d ON f.dim_id = d.id
+        JOIN t ON f.tiny_id = t.id
+        WHERE t.id = 1
+    """
+    best_on = float("inf")
+    best_off = float("inf")
+    count = -1
+    for _ in range(repeat):
+        start = time.perf_counter()
+        rows, _ = execute(catalog, sql)
+        best_on = min(best_on, time.perf_counter() - start)
+        count = len(rows)
+
+        start = time.perf_counter()
+        rows_off, _ = execute(catalog, sql, reorder=False)
+        best_off = min(best_off, time.perf_counter() - start)
+        assert len(rows_off) == count, "reordering changed the row count"
+    return best_on, best_off, count
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -136,6 +181,14 @@ def main() -> int:
         below, above, rows = time_pushdown(orders, lineitems, args.repeat)
         print(f"{n:>8,} {rows:>10,} {below:>12.3f}s {above:>11.3f}s "
               f"{above / below:>8.2f}x")
+
+    print()
+    print(f"{'facts':>8} {'rows out':>10} {'cost-based':>12} "
+          f"{'as written':>12} {'speedup':>9}")
+    print("-" * 56)
+    for n in args.sizes:
+        on, off, rows = time_join_order(n, n_dim=200, n_tiny=50, repeat=args.repeat)
+        print(f"{n:>8,} {rows:>10,} {on:>11.3f}s {off:>11.3f}s {off / on:>8.2f}x")
     return 0
 
 
