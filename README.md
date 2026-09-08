@@ -101,13 +101,43 @@ should expect. The filter keeps about half the orders, so the build side is
 half as large and half as many probes find a match. It changes the constant,
 not the complexity.
 
+**Cost-based join ordering**, a fact table joined to a 200 row dimension and a
+50 row table filtered down to one:
+
+| facts | rows out | cost-based | as written | speedup |
+| --- | --- | --- | --- | --- |
+| 1,000 | 20 | 0.004s | 0.006s | 1.30x |
+| 5,000 | 100 | 0.018s | 0.024s | 1.35x |
+| 20,000 | 400 | 0.073s | 0.108s | 1.48x |
+| 100,000 | 2,000 | 0.324s | 0.711s | **2.19x** |
+
+Written order joins the facts to the dimension first, which means carrying
+every fact row through a wide join before anything filters it down. The cost
+model starts from the filtered table instead:
+
+```
+HashJoin f.dim_id = d.id
+  HashJoin t.id = f.tiny_id
+    Filter t.id = 1
+      Scan t
+    Scan f
+  Scan d
+```
+
+That one row leads, the join to `f` collapses the fact table immediately, and
+`d` joins against something small. Like hash join and unlike pushdown, the win
+grows with size, because the cost of getting the order wrong is proportional to
+how big the intermediate result gets.
+
 Measured on CPython 3.13, best of three runs.
 
 ## What it does not do
 
 No nested queries, no outer joins, no disk spill. NULL join keys never match. NULLs in `ORDER BY` sort last.
 
-No cost-based join reordering: joins execute in the order written. AND-clauses in `WHERE` that only mention one table are pushed below the join (so `o.year = 2024` filters orders before the hash table is built). Predicates that mention both sides, and `OR`s we cannot split, stay above the join.
+AND-clauses in `WHERE` that only mention one table are pushed below the join (so `o.year = 2024` filters orders before the hash table is built). Predicates that mention both sides, and `OR`s we cannot split, stay above the join.
+
+Join ordering searches left-deep plans only, using the Selinger dynamic program over subsets, and gives up above 10 tables. Statistics come from a full scan rather than a sample, which is honest only because the tables are already in memory. Estimates use the usual independence assumptions, so correlated predicates will mislead it in exactly the way they mislead every other optimiser.
 
 ## Run
 
