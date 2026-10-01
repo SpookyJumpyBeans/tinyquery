@@ -82,7 +82,7 @@ def estimate_selectivity(predicate: Expr, stats: TableStats) -> float:
         if predicate.op in ("<", "<=", ">", ">="):
             return RANGE_SELECTIVITY
     if isinstance(predicate, NotOp):
-        return 1.0 - estimate_selectivity(predicate.expr, stats)
+        return 1.0 - estimate_selectivity(predicate.inner, stats)
     return DEFAULT_SELECTIVITY
 
 
