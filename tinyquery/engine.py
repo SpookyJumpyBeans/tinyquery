@@ -4,6 +4,7 @@ from tinyquery.catalog import Catalog
 from tinyquery.operators import Operator
 from tinyquery.parser import parse
 from tinyquery.planner import plan
+from tinyquery.profiler import AnalyzeResult, profile_plan
 from tinyquery.schema import Row, Schema
 
 
@@ -38,3 +39,8 @@ def format_explain(operator: Operator, indent: int = 0) -> str:
     for child in operator.children():
         lines.append(format_explain(child, indent + 1))
     return "\n".join(lines)
+
+
+def explain_analyze(catalog: Catalog, sql: str, reorder: bool = True) -> AnalyzeResult:
+    """Run the query and return its rows plus per-operator estimates and timings."""
+    return profile_plan(compile_sql(catalog, sql, reorder=reorder))

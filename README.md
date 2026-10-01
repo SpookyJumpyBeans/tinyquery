@@ -131,6 +131,52 @@ how big the intermediate result gets.
 
 Measured on CPython 3.13, best of three runs.
 
+## Was the planner right? EXPLAIN ANALYZE
+
+`--analyze` runs the query and reports, for every operator, the row count the
+cost model predicted next to the row count that actually came out, plus time
+spent:
+
+```
+$ python -m tinyquery --analyze "SELECT f.id, d.label, t.label FROM f JOIN d ON f.dim_id = d.id JOIN t ON f.tiny_id = t.id WHERE t.id = 1"
+
+Project f.id, d.label, t.label  (rows est=400 actual=400  time=63.70ms self=3.21ms)
+  Reorder to declared column order  (rows est=400 actual=400  time=60.50ms self=1.00ms)
+    HashJoin f.dim_id = d.id  (rows est=400 actual=400  time=59.50ms self=2.09ms)
+      HashJoin t.id = f.tiny_id  (rows est=400 actual=400  time=57.29ms self=46.26ms)
+        Filter t.id = 1  (rows est=1 actual=1  time=0.12ms self=0.09ms)
+          Scan t  (rows est=50 actual=50  time=0.03ms self=0.03ms)
+        Scan f  (rows est=20,000 actual=20,000  time=10.90ms self=10.90ms)
+      Scan d  (rows est=200 actual=200  time=0.12ms self=0.12ms)
+```
+
+Add `--no-reorder` and the same query shows why the cost model bothers. The
+first join now produces a 20,000 row intermediate result before anything
+filters it:
+
+```
+  HashJoin f.tiny_id = t.id  (rows est=400 actual=400  time=107.05ms self=42.27ms)
+    HashJoin f.dim_id = d.id  (rows est=20,000 actual=20,000  time=64.47ms self=54.00ms)
+```
+
+Those estimates are exact only because that data is uniform. Equality
+selectivity assumes every value is equally common, so skewed data fools it,
+and any node off by 10x or more gets flagged:
+
+```
+Filter t.k = 1  (rows est=25 actual=1  time=0.02ms self=0.01ms)   <-- estimate off by 25x
+```
+
+Estimates are recomputed bottom-up over the finished plan using the same
+statistics and formulas the join orderer uses. Timing is inclusive of
+children, and `self` subtracts them. `--analyze --json` emits the plan and rows
+as JSON.
+
+Profiling works from outside the operators: for one run, each instance gets
+its `open`, `next_row`, and `close` wrapped with counters, and the originals
+are restored afterwards, even if the query fails. Operators never know they
+are being watched, and an unprofiled query pays nothing for the feature.
+
 ## What it does not do
 
 No nested queries, no outer joins, no disk spill. NULL join keys never match. NULLs in `ORDER BY` sort last.
@@ -144,7 +190,12 @@ Join ordering searches left-deep plans only, using the Selinger dynamic program 
 ```bash
 python -m tinyquery "SELECT region FROM orders WHERE year = 2024"
 python -m tinyquery --explain "SELECT o.region, SUM(l.revenue) AS total FROM orders o JOIN lineitem l ON o.id = l.order_id WHERE o.year = 2024 GROUP BY o.region"
+python -m tinyquery --analyze "SELECT o.region, SUM(l.revenue) AS total FROM orders o JOIN lineitem l ON o.id = l.order_id WHERE o.year = 2024 GROUP BY o.region"
 ```
+
+`--explain` prints the plan without running it. `--analyze` runs it and reports
+estimated vs actual rows per operator. `--no-reorder` turns off the cost-based
+join order, for comparison.
 
 `--data examples` is the default. Each `*.csv` becomes a table named after the file.
 
