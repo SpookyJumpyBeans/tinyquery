@@ -186,3 +186,27 @@ def test_join_estimate_divides_by_the_wider_key():
 
 def test_join_estimate_never_returns_zero():
     assert estimate_join_rows(0, 0, 1, 1) >= 1.0
+
+
+def test_not_predicate_does_not_crash_the_cost_model():
+    """Regression: the estimator read NotOp.expr, but the field is NotOp.inner,
+    so any NOT filter in a 3+ table join raised AttributeError while planning."""
+    catalog = star_catalog()
+    sql = """
+        SELECT f.id
+        FROM f
+        JOIN d ON f.dim_id = d.id
+        JOIN t ON f.tiny_id = t.id
+        WHERE NOT t.id = 1
+    """
+    assert sorted(execute(catalog, sql)[0]) == sorted(
+        execute(catalog, sql, reorder=False)[0]
+    )
+
+
+def test_not_inverts_selectivity():
+    schema = Schema((Column("a"),))
+    stats = analyze(schema, [(i % 4,) for i in range(100)])
+    from tinyquery.expr import NotOp
+    predicate = NotOp(BinaryOp("=", ColumnRef("a"), Literal(1)))
+    assert estimate_selectivity(predicate, stats) == pytest.approx(0.75)

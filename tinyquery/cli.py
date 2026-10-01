@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from tinyquery.catalog import Catalog
-from tinyquery.engine import execute, explain
+from tinyquery.engine import execute, explain, explain_analyze
 from tinyquery.errors import TinyQueryError
+from tinyquery.profiler import format_analyze
 from tinyquery.schema import Row, Schema
 
 
@@ -39,6 +41,21 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="print the physical plan instead of running the query",
     )
+    parser.add_argument(
+        "--analyze",
+        action="store_true",
+        help="run the query and print each operator's estimated vs actual rows and time",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="with --analyze, print the plan and rows as JSON",
+    )
+    parser.add_argument(
+        "--no-reorder",
+        action="store_true",
+        help="join tables in the order written instead of asking the cost model",
+    )
     args = parser.parse_args(argv)
 
     catalog = Catalog()
@@ -63,11 +80,25 @@ def main(argv: list[str] | None = None) -> int:
         if args.version is not None:
             print(f"-- {name.strip()} at version {version}", file=sys.stderr)
 
+    reorder = not args.no_reorder
     try:
-        if args.explain:
-            print(explain(catalog, args.sql))
+        if args.analyze:
+            result = explain_analyze(catalog, args.sql, reorder=reorder)
+            if args.json:
+                print(json.dumps({
+                    "columns": result.schema.names(),
+                    "rows": [list(row) for row in result.rows],
+                    "plan": result.plan.to_dict(),
+                }))
+            else:
+                print(format_analyze(result.plan))
+                n = len(result.rows)
+                print(f"({n} row{'s' if n != 1 else ''})")
             return 0
-        rows, schema = execute(catalog, args.sql)
+        if args.explain:
+            print(explain(catalog, args.sql, reorder=reorder))
+            return 0
+        rows, schema = execute(catalog, args.sql, reorder=reorder)
         print(_format_table(rows, schema))
         return 0
     except TinyQueryError as exc:
