@@ -2,6 +2,7 @@
 // builds the demo tables, and runs queries through demo.run().
 
 import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs";
+import { renderPlanTree } from "./plan.js";
 
 const MAX_ROWS_SHOWN = 100;
 
@@ -10,7 +11,11 @@ const el = {
   run: document.getElementById("run"),
   status: document.getElementById("status"),
   presets: document.getElementById("presets"),
-  plan: document.getElementById("plan"),
+  planView: document.querySelector(".plan-view"),
+  planTree: document.getElementById("plan-tree"),
+  planText: document.getElementById("plan-text"),
+  tooltip: document.getElementById("plan-tooltip"),
+  viewButtons: document.querySelectorAll("[data-view]"),
   results: document.getElementById("results"),
   history: document.getElementById("orders-history"),
 };
@@ -69,26 +74,62 @@ function renderPresets(presets) {
   el.sql.value = presets[0].sql;
 }
 
-function runQuery() {
-  if (!demo) return;
-  const started = performance.now();
-  const result = JSON.parse(demo.run(el.sql.value));
-  const elapsed = performance.now() - started;
+let runCount = 0;
+let running = false;
 
-  if (result.error) {
-    setStatus("Query failed", true);
-    const message = document.createElement("p");
-    message.className = "error-text";
-    message.textContent = result.error;
-    el.results.replaceChildren(message);
-    el.plan.textContent = "";
-    return;
+// Python runs on the main thread, so the page cannot repaint until a query
+// finishes. Wait for a frame first, or "Running…" would never be seen.
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+
+async function runQuery() {
+  if (!demo || running) return;
+  running = true;
+  el.run.disabled = true;
+  el.run.textContent = "Running…";
+  setStatus("Running…");
+  await nextFrame();
+
+  try {
+    const started = performance.now();
+    const result = JSON.parse(demo.run(el.sql.value));
+    const elapsed = performance.now() - started;
+    runCount += 1;
+
+    if (result.error) {
+      setStatus(`Run ${runCount}: query failed`, true);
+      const message = document.createElement("p");
+      message.className = "error-text";
+      message.textContent = result.error;
+      el.results.replaceChildren(message);
+      el.planTree.replaceChildren();
+      el.planText.textContent = "";
+    } else {
+      const n = result.rows.length;
+      setStatus(
+        `Run ${runCount}: ${n.toLocaleString()} row${n === 1 ? "" : "s"} in ` +
+          `${elapsed.toFixed(0)}ms, orders v${result.version}`,
+      );
+      el.tooltip.hidden = true;
+      renderPlanTree(el.planTree, el.tooltip, result.plan, result.misestimate_factor);
+      el.planText.textContent = result.text;
+      renderRows(result.columns, result.rows);
+    }
+    flash(el.planView, el.results);
+  } finally {
+    running = false;
+    el.run.disabled = false;
+    el.run.textContent = "Run";
   }
+}
 
-  const n = result.rows.length;
-  setStatus(`${n.toLocaleString()} row${n === 1 ? "" : "s"} in ${elapsed.toFixed(0)}ms, orders v${result.version}`);
-  el.plan.textContent = result.text;
-  renderRows(result.columns, result.rows);
+// Re-running a query often produces the same rows and nearly the same plan,
+// so mark the panels as refreshed or the click looks like it did nothing.
+function flash(...panels) {
+  for (const panel of panels) {
+    panel.classList.remove("refreshed");
+    void panel.offsetWidth; // restart the animation
+    panel.classList.add("refreshed");
+  }
 }
 
 function renderRows(columns, rows) {
@@ -123,6 +164,29 @@ function renderRows(columns, rows) {
 function formatValue(value) {
   if (typeof value === "number" && !Number.isInteger(value)) return value.toFixed(2);
   return String(value);
+}
+
+function showView(view) {
+  el.planTree.hidden = view !== "tree";
+  el.planText.hidden = view !== "text";
+  el.tooltip.hidden = true;
+  for (const button of el.viewButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.view === view));
+  }
+  try {
+    localStorage.setItem("plan-view", view);
+  } catch {
+    // Storage can be unavailable (private mode, blocked site data); the default is fine.
+  }
+}
+
+for (const button of el.viewButtons) {
+  button.addEventListener("click", () => showView(button.dataset.view));
+}
+try {
+  if (localStorage.getItem("plan-view") === "text") showView("text");
+} catch {
+  // As above: fall back to the tree.
 }
 
 el.run.addEventListener("click", runQuery);
