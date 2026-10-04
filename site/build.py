@@ -20,7 +20,7 @@ from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
 ROOT = SITE.parent
-PAGE_FILES = ("index.html", "style.css", "app.js", "plan.js")
+PAGE_FILES = ("index.html", "style.css", "app.js", "plan.js", "timeline.js")
 
 
 def build(out: Path) -> Path:

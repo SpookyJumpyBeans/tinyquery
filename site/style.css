@@ -14,6 +14,8 @@
   --critical: #d03b3b;
   --grid: #ecebe7;
   --row-hover: #f3f3ef;
+  --column: #cfcec8;
+  --switch-off: #c9c8c2;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
@@ -35,6 +37,8 @@
     --critical: #e66767;
     --grid: #2a2a2e;
     --row-hover: #232327;
+    --column: #45454b;
+    --switch-off: #4a4a50;
     color-scheme: dark;
   }
 }
@@ -72,6 +76,7 @@ a { color: var(--accent); }
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
     "query results"
+    "controls controls"
     "plan plan"
     "tables tables";
   align-items: start;
@@ -81,11 +86,12 @@ a { color: var(--accent); }
 .plan { grid-area: plan; }
 .results { grid-area: results; }
 .tables { grid-area: tables; }
+.controls { grid-area: controls; }
 
 @media (max-width: 860px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-areas: "query" "plan" "results" "tables";
+    grid-template-areas: "query" "controls" "plan" "results" "tables";
   }
 }
 
@@ -196,6 +202,163 @@ th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {
   .refreshed { animation: none; }
+}
+
+/* ------------------------------------------------- time travel and planner */
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 16px 32px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .controls-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.timeline-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+.version-label { font-weight: 600; font-variant-numeric: tabular-nums; margin-right: auto; }
+
+button.secondary {
+  font: 12px var(--sans);
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button.secondary:disabled { opacity: 0.5; cursor: default; }
+
+.timeline-chart {
+  position: relative;
+  height: 72px;
+  border-bottom: 1px solid var(--border);
+}
+
+.column {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.column-bar {
+  width: 18px; /* narrowed by timeline.js as versions are added */
+  max-height: calc(100% - 16px);
+  background: var(--column);
+  border-radius: 4px 4px 0 0; /* rounded data end, square at the baseline */
+}
+
+.column-value { font-size: 11px; line-height: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.column:hover .column-bar { background: var(--muted); }
+.column.selected .column-bar { background: var(--accent); }
+.column.selected .column-value { color: var(--text); font-weight: 600; }
+
+/* A plain track and a 16px round thumb, so timeline.js knows where it sits. */
+#version {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 20px;
+  margin: 4px 0 0;
+  background: transparent;
+}
+
+#version::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--border); }
+#version::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border); }
+
+#version::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+#version::-moz-range-thumb {
+  width: 12px; /* plus the 2px border on each side: 16px */
+  height: 12px;
+  border: 2px solid var(--panel);
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+#version:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.timeline-labels { position: relative; height: 34px; }
+
+.timeline-label {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  line-height: 15px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.timeline-label small { font-size: 11px; }
+.timeline-label.selected { color: var(--text); font-weight: 600; }
+
+.switches { border: 0; margin: 0; padding: 0; display: grid; gap: 14px; }
+.switch { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.switch-text { display: grid; gap: 2px; }
+.switch-text small { color: var(--muted); font-size: 12.5px; }
+
+.switch input {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  margin: 1px 0 0;
+  border-radius: 10px;
+  background: var(--switch-off);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.switch input::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.15s;
+}
+
+.switch input:checked { background: var(--accent); }
+.switch input:checked::before { transform: translateX(14px); }
+.switch input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch input:disabled { opacity: 0.5; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) {
+  .switch input, .switch input::before { transition: none; }
 }
 
 /* ---------------------------------------------------------------- plan tree */

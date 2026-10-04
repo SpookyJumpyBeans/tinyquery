@@ -37,6 +37,41 @@
       </div>
     </section>
 
+    <section class="panel controls" aria-labelledby="controls-heading">
+      <h2 id="controls-heading">Time travel and planner</h2>
+      <div class="controls-grid">
+        <div class="timeline">
+          <div class="timeline-head">
+            <span id="version-label" class="version-label">Loading versions…</span>
+            <button id="append" type="button" class="secondary" disabled>Append 200 orders</button>
+          </div>
+          <div class="timeline-track">
+            <div id="timeline-chart" class="timeline-chart" aria-hidden="true"></div>
+            <input id="version" type="range" min="0" max="0" step="1" value="0"
+                   aria-label="Version of orders to query" disabled>
+            <div id="timeline-labels" class="timeline-labels" aria-hidden="true"></div>
+          </div>
+        </div>
+        <fieldset class="switches">
+          <legend class="visually-hidden">Planner options</legend>
+          <label class="switch">
+            <input id="reorder" type="checkbox" role="switch" checked disabled>
+            <span class="switch-text">
+              <strong>Join reordering</strong>
+              <small>The cost model picks the join order. Off: join in the order written.</small>
+            </span>
+          </label>
+          <label class="switch">
+            <input id="pushdown" type="checkbox" role="switch" checked disabled>
+            <span class="switch-text">
+              <strong>Predicate pushdown</strong>
+              <small>Filters run below the joins. Off: one filter above them all.</small>
+            </span>
+          </label>
+        </fieldset>
+      </div>
+    </section>
+
     <section class="panel plan" aria-labelledby="plan-heading">
       <div class="panel-head">
         <h2 id="plan-heading">Plan</h2>

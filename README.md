@@ -214,7 +214,10 @@ pytest
 table with six versions, plus customers and line items -- and runs every query
 under `EXPLAIN ANALYZE`. The plan is drawn as a tree, with estimated and actual
 rows as paired bars on one log scale, and any operator off by 10x or more is
-flagged, the same as in the text output.
+flagged, the same as in the text output. A timeline under the query moves every table read
+to an older version of `orders`, an Append button commits a new one, and
+switches turn join reordering and predicate pushdown off so you can watch the
+plan change.
 
 ```bash
 pip install -e ".[delta]"
