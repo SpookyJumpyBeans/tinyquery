@@ -3,6 +3,7 @@
 
 import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs";
 import { renderPlanTree } from "./plan.js";
+import { describe, renderTimeline } from "./timeline.js";
 
 const MAX_ROWS_SHOWN = 100;
 
@@ -18,9 +19,21 @@ const el = {
   viewButtons: document.querySelectorAll("[data-view]"),
   results: document.getElementById("results"),
   history: document.getElementById("orders-history"),
+  version: document.getElementById("version"),
+  versionLabel: document.getElementById("version-label"),
+  append: document.getElementById("append"),
+  timeline: {
+    chart: document.getElementById("timeline-chart"),
+    labels: document.getElementById("timeline-labels"),
+    input: document.getElementById("version"),
+  },
+  reorder: document.getElementById("reorder"),
+  pushdown: document.getElementById("pushdown"),
 };
 
 let demo = null;
+let commits = [];
+let selected = 0; // index into commits, which is also the version number
 
 function setStatus(text, isError = false) {
   el.status.textContent = text;
@@ -40,19 +53,38 @@ async function boot() {
   demo = pyodide.pyimport("demo");
 
   setStatus("Building tables…");
-  renderHistory(JSON.parse(demo.setup("/data")));
+  setHistory(JSON.parse(demo.setup("/data")));
   renderPresets(JSON.parse(demo.presets()));
 
-  el.sql.disabled = false;
-  el.run.disabled = false;
+  for (const control of [el.sql, el.run, el.version, el.append, el.reorder, el.pushdown]) {
+    control.disabled = false;
+  }
   setStatus(`Ready in ${((performance.now() - started) / 1000).toFixed(1)}s`);
   runQuery();
 }
 
-function renderHistory(commits) {
+// Replace the history. If the latest version was selected, follow the table
+// forward to its new latest; otherwise stay on the version being looked at.
+function setHistory(next) {
+  const wasLatest = commits.length === 0 || selected === commits.length - 1;
+  commits = next;
+  if (wasLatest) selected = commits.length - 1;
   const latest = commits[commits.length - 1];
   el.history.textContent =
     `${commits.length} versions (v0–v${latest.version}), ${latest.rows.toLocaleString()} rows at latest`;
+  drawTimeline();
+}
+
+function drawTimeline() {
+  renderTimeline(el.timeline, commits, selected, pickVersion);
+  el.versionLabel.textContent = `Querying orders at ${describe(commits[selected], commits.length)}`;
+}
+
+function pickVersion(index) {
+  if (index === selected) return;
+  selected = index;
+  drawTimeline();
+  runQuery();
 }
 
 function renderPresets(presets) {
@@ -76,13 +108,18 @@ function renderPresets(presets) {
 
 let runCount = 0;
 let running = false;
+let pending = false; // something changed mid-run; run once more when it ends
 
 // Python runs on the main thread, so the page cannot repaint until a query
 // finishes. Wait for a frame first, or "Running…" would never be seen.
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
 
 async function runQuery() {
-  if (!demo || running) return;
+  if (!demo) return;
+  if (running) {
+    pending = true;
+    return;
+  }
   running = true;
   el.run.disabled = true;
   el.run.textContent = "Running…";
@@ -91,7 +128,9 @@ async function runQuery() {
 
   try {
     const started = performance.now();
-    const result = JSON.parse(demo.run(el.sql.value));
+    const result = JSON.parse(
+      demo.run(el.sql.value, selected, el.reorder.checked, el.pushdown.checked),
+    );
     const elapsed = performance.now() - started;
     runCount += 1;
 
@@ -119,6 +158,12 @@ async function runQuery() {
     running = false;
     el.run.disabled = false;
     el.run.textContent = "Run";
+  }
+  if (pending) {
+    // Dragging the slider fires faster than queries finish. Collapse the
+    // backlog into one run with whatever the controls say now.
+    pending = false;
+    runQuery();
   }
 }
 
@@ -190,6 +235,15 @@ try {
 }
 
 el.run.addEventListener("click", runQuery);
+// Column and label spacing depend on the chart's width.
+new ResizeObserver(() => commits.length && drawTimeline()).observe(el.timeline.chart);
+el.version.addEventListener("input", () => pickVersion(Number(el.version.value)));
+el.reorder.addEventListener("change", runQuery);
+el.pushdown.addEventListener("change", runQuery);
+el.append.addEventListener("click", () => {
+  setHistory(JSON.parse(demo.append_orders(200)));
+  runQuery();
+});
 el.sql.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();

@@ -25,6 +25,14 @@ def _load(name):
     return module
 
 
+@pytest.fixture
+def fresh_demo(tmp_path):
+    """Its own shop, for tests that commit new versions."""
+    module = _load("demo")
+    module.setup(tmp_path / "data")
+    return module
+
+
 @pytest.fixture(scope="module")
 def demo(tmp_path_factory):
     module = _load("demo")
@@ -94,5 +102,35 @@ def test_build_bundles_both_packages_and_the_demo(tmp_path):
     names = set(zipfile.ZipFile(bundle).namelist())
     assert {"demo.py", "tinyquery/engine.py", "tinydelta/log.py"} <= names
     assert not any("__pycache__" in name for name in names)
-    for page in ("index.html", "style.css", "app.js", "plan.js"):
+    for page in ("index.html", "style.css", "app.js", "plan.js", "timeline.js"):
         assert (tmp_path / "site" / page).is_file()
+
+
+def test_append_orders_commits_a_new_version(fresh_demo):
+    before = json.loads(fresh_demo.history())
+    after = json.loads(fresh_demo.append_orders(200))
+    assert len(after) == len(before) + 1
+    assert after[-1]["operation"] == "APPEND"
+    assert after[-1]["rows"] == before[-1]["rows"] + 200
+
+    count = "SELECT COUNT(o.id) AS n FROM orders o WHERE o.year = 2026"
+    assert json.loads(fresh_demo.run(count))["rows"] == [[200]]
+    assert json.loads(fresh_demo.run(count, version=before[-1]["version"]))["rows"] == [[0]]
+
+
+def test_appended_orders_have_line_items(fresh_demo):
+    fresh_demo.append_orders(50)
+    sql = (
+        "SELECT COUNT(l.order_id) AS n FROM orders o "
+        "JOIN lineitem l ON o.id = l.order_id WHERE o.year = 2026"
+    )
+    assert json.loads(fresh_demo.run(sql))["rows"] == [[50 * 4]]
+
+
+def test_repeated_appends_never_reuse_an_id(fresh_demo):
+    fresh_demo.append_orders(10)
+    fresh_demo.append_orders(10)
+    sql = "SELECT COUNT(o.id) AS n FROM orders o"
+    total = json.loads(fresh_demo.run(sql))["rows"][0][0]
+    distinct = json.loads(fresh_demo.run("SELECT DISTINCT o.id FROM orders o"))["rows"]
+    assert len(distinct) == total == 1800 + 20

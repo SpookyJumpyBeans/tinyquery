@@ -14,6 +14,9 @@ The shop has three tables:
     common, so `WHERE c.tier = 'platinum'` is estimated 25x too high.
   * `lineitem` has four items per order, for every order any version holds.
 
+`append_orders()` commits another version from the page, so visitors can
+extend the history and watch the plan follow it.
+
 `customers` and `lineitem` never change, so they are registered in memory.
 """
 
@@ -133,7 +136,38 @@ def setup(base: str | Path = "/data") -> str:
     table.overwrite([row for year in YEARS[1:] for row in by_year[year]])
     table.restore(len(YEARS))  # the version before the overwrite
 
-    _state.update(table_path=table_path, customers=customers, lineitem=lineitem)
+    _state.update(
+        table_path=table_path,
+        customers=customers,
+        lineitem=lineitem,
+        rng=rng,
+        next_id=len(YEARS) * ORDERS_PER_YEAR,
+    )
+    return history()
+
+
+def append_orders(count: int = 200, year: int = YEARS[-1] + 1) -> str:
+    """Commit `count` new orders as a new version. Returns the new history.
+
+    Their line items join the in-memory `lineitem`, which every version shares;
+    older versions simply have no orders for them to match.
+    """
+    rng: random.Random = _state["rng"]
+    first = _state["next_id"]
+    rows = []
+    for order_id in range(first, first + count):
+        rows.append(
+            {
+                "id": order_id,
+                "customer_id": rng.randrange(len(_state["customers"])),
+                "region": rng.choice(REGIONS),
+                "year": year,
+            }
+        )
+        for _ in range(ITEMS_PER_ORDER):
+            _state["lineitem"].append((order_id, rng.choice(SKUS), rng.randrange(1, 200)))
+    DeltaTable.open(_state["table_path"]).append(rows)
+    _state["next_id"] = first + count
     return history()
 
 
