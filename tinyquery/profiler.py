@@ -51,6 +51,7 @@ class PlanStats:
     """One operator's numbers, with its children's beneath it."""
 
     label: str
+    operator: str  # class name, e.g. "HashJoin", so a frontend need not parse labels
     estimated_rows: float
     actual_rows: int
     total_ms: float  # this operator plus everything beneath it
@@ -67,6 +68,7 @@ class PlanStats:
     def to_dict(self) -> dict[str, Any]:
         return {
             "label": self.label,
+            "operator": self.operator,
             "estimated_rows": round(self.estimated_rows, 1),
             "actual_rows": self.actual_rows,
             "total_ms": round(self.total_ms, 3),
@@ -165,6 +167,7 @@ def _build(
     self_ms = max(0.0, total_ms - sum(child.total_ms for child in children))
     return PlanStats(
         label=op.explain_label(),
+        operator=type(op).__name__,
         estimated_rows=estimates[id(op)],
         actual_rows=rows,
         total_ms=total_ms,

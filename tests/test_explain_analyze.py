@@ -135,7 +135,17 @@ def test_plan_serialises_to_json():
     plan = explain_analyze(star_catalog(), THREE_TABLE_SQL).plan
     data = json.loads(json.dumps(plan.to_dict()))
     assert data["actual_rows"] == plan.actual_rows
-    assert {"label", "estimated_rows", "actual_rows", "total_ms", "self_ms", "children"} <= set(data)
+    assert {
+        "label", "operator", "estimated_rows", "actual_rows", "total_ms", "self_ms", "children"
+    } <= set(data)
+    operators = {node["operator"] for node in _json_nodes(data)}
+    assert {"Project", "Reorder", "HashJoin", "Filter", "Scan"} <= operators
+
+
+def _json_nodes(data):
+    yield data
+    for child in data["children"]:
+        yield from _json_nodes(child)
 
 
 def test_cli_analyze_prints_estimates_and_actuals(capsys):

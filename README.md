@@ -172,7 +172,7 @@ Filter t.k = 1  (rows est=25 actual=1  time=0.02ms self=0.01ms)   <-- estimate o
 Estimates are recomputed bottom-up over the finished plan using the same
 statistics and formulas the join orderer uses. Timing is inclusive of
 children, and `self` subtracts them. `--analyze --json` emits the plan and rows
-as JSON.
+as JSON, with each node's operator class alongside its label.
 
 Profiling works from outside the operators: for one run, each instance gets
 its `open`, `next_row`, and `close` wrapped with counters, and the originals
@@ -197,7 +197,8 @@ python -m tinyquery --analyze "SELECT o.region, SUM(l.revenue) AS total FROM ord
 
 `--explain` prints the plan without running it. `--analyze` runs it and reports
 estimated vs actual rows per operator. `--no-reorder` turns off the cost-based
-join order, for comparison.
+join order, and `--no-pushdown` keeps every `WHERE` filter above the joins, for
+comparison.
 
 `--data examples` is the default. Each `*.csv` becomes a table named after the file.
 

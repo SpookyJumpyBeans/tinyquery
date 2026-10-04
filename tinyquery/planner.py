@@ -28,12 +28,17 @@ from tinyquery.schema import Column, Schema
 
 
 class Planner:
-    def __init__(self, catalog: Catalog, reorder: bool = True) -> None:
+    def __init__(
+        self, catalog: Catalog, reorder: bool = True, pushdown: bool = True
+    ) -> None:
         self.catalog = catalog
         # Off means "join in the order written", which is what the planner did
         # before the cost model existed. Tests and the benchmark use it to
         # compare the two plans on identical inputs.
         self.reorder = reorder
+        # Off means every WHERE predicate stays in one Filter above the joins,
+        # so the cost model also sees each table at its full size.
+        self.pushdown = pushdown
 
     def plan(self, query: Query) -> Operator:
         # Validate WHERE against the full joined schema first so ambiguous
@@ -105,7 +110,9 @@ class Planner:
         filters: dict[str, list[Expr]] = {}
         for ref in refs:
             scan = self._scan(ref)
-            pushed, conjuncts = _take_resolvable(conjuncts, scan.schema)
+            pushed: list[Expr] = []
+            if self.pushdown:
+                pushed, conjuncts = _take_resolvable(conjuncts, scan.schema)
             filters[ref.alias] = pushed
             inputs[ref.alias] = _with_filter(scan, pushed)
 
@@ -300,8 +307,10 @@ def _restore_declared_order(
     return Reorder(node, indices, schema)
 
 
-def plan(catalog: Catalog, query: Query, reorder: bool = True) -> Operator:
-    return Planner(catalog, reorder=reorder).plan(query)
+def plan(
+    catalog: Catalog, query: Query, reorder: bool = True, pushdown: bool = True
+) -> Operator:
+    return Planner(catalog, reorder=reorder, pushdown=pushdown).plan(query)
 
 
 def _alias_schema(table: Table, alias: str) -> Schema:
