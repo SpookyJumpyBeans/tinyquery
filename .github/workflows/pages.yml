@@ -1,0 +1,67 @@
+name: pages
+
+# Build the in-browser demo from site/ and publish it to GitHub Pages.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: ["site/**", "tinyquery/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push supersedes a queued one.
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and smoke-test the demo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install with the tinydelta extra
+        run: python -m pip install ".[delta]"
+
+      - name: Build the site
+        run: python site/build.py --out _site
+
+      # pytest runs demo.py natively, where os.link exists. This loads the
+      # built bundle into the same Pyodide release app.js uses, so a demo that
+      # only breaks in the browser never gets published.
+      - name: Smoke-test the bundle in Pyodide
+        run: |
+          npm install --no-save pyodide@314.0.7
+          node site/smoke.mjs _site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

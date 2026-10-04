@@ -6,6 +6,12 @@ Single node SQL engine. You write a small subset of SQL, it parses it, builds an
 
 This is the same shape as Spark/Postgres (parse → plan → operators), on one machine, in memory.
 
+**[Try it in your browser](https://spookyjumpybeans.github.io/tinyquery/)**: tinyquery
+and [tinydelta](https://github.com/SpookyJumpyBeans/tinydelta) running under Pyodide,
+with every query's plan drawn as estimated vs actual rows.
+
+[![The demo: a plan tree with estimated and actual row bars, a version timeline, and planner switches](docs/demo.gif)](https://spookyjumpybeans.github.io/tinyquery/)
+
 ## What works
 
 - `SELECT` columns or `*`
@@ -209,15 +215,16 @@ pytest
 
 ## In the browser
 
-`site/` is a static page that runs tinyquery and tinydelta in the browser with
+[Live demo.](https://spookyjumpybeans.github.io/tinyquery/) `site/` is a static
+page that runs tinyquery and tinydelta in the browser with
 [Pyodide](https://pyodide.org). It builds a small shop -- a tinydelta `orders`
 table with six versions, plus customers and line items -- and runs every query
 under `EXPLAIN ANALYZE`. The plan is drawn as a tree, with estimated and actual
 rows as paired bars on one log scale, and any operator off by 10x or more is
-flagged, the same as in the text output. A timeline under the query moves every table read
-to an older version of `orders`, an Append button commits a new one, and
-switches turn join reordering and predicate pushdown off so you can watch the
-plan change.
+flagged, the same as in the text output. A timeline under the query moves
+every read to an older version of `orders`, an Append button commits a new one,
+and switches turn join reordering and predicate pushdown off so you can watch
+the plan change.
 
 ```bash
 pip install -e ".[delta]"
@@ -229,6 +236,12 @@ Pyodide has no hard links, and tinydelta publishes a commit by linking a
 finished temp file to its version name. The demo stands in with exclusive
 create plus copy, which is only safe because a browser tab runs one Python
 thread. Run natively, the real `link()` is used.
+
+Every push to `main` rebuilds the page and publishes it to GitHub Pages
+(`.github/workflows/pages.yml`). Before publishing, `site/smoke.mjs` loads the
+built bundle into the same Pyodide release the page uses and runs every preset
+under every planner setting. The pytest suite runs `demo.py` natively, where
+`os.link` exists, so this is the only check on the browser path.
 
 ## How a query runs
 
