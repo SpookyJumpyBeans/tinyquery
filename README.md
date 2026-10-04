@@ -212,7 +212,9 @@ pytest
 `site/` is a static page that runs tinyquery and tinydelta in the browser with
 [Pyodide](https://pyodide.org). It builds a small shop -- a tinydelta `orders`
 table with six versions, plus customers and line items -- and runs every query
-under `EXPLAIN ANALYZE`.
+under `EXPLAIN ANALYZE`. The plan is drawn as a tree, with estimated and actual
+rows as paired bars on one log scale, and any operator off by 10x or more is
+flagged, the same as in the text output.
 
 ```bash
 pip install -e ".[delta]"

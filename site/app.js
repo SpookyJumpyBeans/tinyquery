@@ -2,6 +2,7 @@
 // builds the demo tables, and runs queries through demo.run().
 
 import { loadPyodide } from "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/pyodide.mjs";
+import { renderPlanTree } from "./plan.js";
 
 const MAX_ROWS_SHOWN = 100;
 
@@ -10,7 +11,11 @@ const el = {
   run: document.getElementById("run"),
   status: document.getElementById("status"),
   presets: document.getElementById("presets"),
-  plan: document.getElementById("plan"),
+  planView: document.querySelector(".plan-view"),
+  planTree: document.getElementById("plan-tree"),
+  planText: document.getElementById("plan-text"),
+  tooltip: document.getElementById("plan-tooltip"),
+  viewButtons: document.querySelectorAll("[data-view]"),
   results: document.getElementById("results"),
   history: document.getElementById("orders-history"),
 };
@@ -96,17 +101,20 @@ async function runQuery() {
       message.className = "error-text";
       message.textContent = result.error;
       el.results.replaceChildren(message);
-      el.plan.textContent = "";
+      el.planTree.replaceChildren();
+      el.planText.textContent = "";
     } else {
       const n = result.rows.length;
       setStatus(
         `Run ${runCount}: ${n.toLocaleString()} row${n === 1 ? "" : "s"} in ` +
           `${elapsed.toFixed(0)}ms, orders v${result.version}`,
       );
-      el.plan.textContent = result.text;
+      el.tooltip.hidden = true;
+      renderPlanTree(el.planTree, el.tooltip, result.plan, result.misestimate_factor);
+      el.planText.textContent = result.text;
       renderRows(result.columns, result.rows);
     }
-    flash(el.plan, el.results);
+    flash(el.planView, el.results);
   } finally {
     running = false;
     el.run.disabled = false;
@@ -156,6 +164,29 @@ function renderRows(columns, rows) {
 function formatValue(value) {
   if (typeof value === "number" && !Number.isInteger(value)) return value.toFixed(2);
   return String(value);
+}
+
+function showView(view) {
+  el.planTree.hidden = view !== "tree";
+  el.planText.hidden = view !== "text";
+  el.tooltip.hidden = true;
+  for (const button of el.viewButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.view === view));
+  }
+  try {
+    localStorage.setItem("plan-view", view);
+  } catch {
+    // Storage can be unavailable (private mode, blocked site data); the default is fine.
+  }
+}
+
+for (const button of el.viewButtons) {
+  button.addEventListener("click", () => showView(button.dataset.view));
+}
+try {
+  if (localStorage.getItem("plan-view") === "text") showView("text");
+} catch {
+  // As above: fall back to the tree.
 }
 
 el.run.addEventListener("click", runQuery);

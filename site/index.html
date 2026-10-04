@@ -38,8 +38,23 @@
     </section>
 
     <section class="panel plan" aria-labelledby="plan-heading">
-      <h2 id="plan-heading">Plan</h2>
-      <pre id="plan" class="plan-text">Run a query to see its plan.</pre>
+      <div class="panel-head">
+        <h2 id="plan-heading">Plan</h2>
+        <div class="legend" aria-hidden="true">
+          <span><span class="swatch est"></span>Estimated rows</span>
+          <span><span class="swatch act"></span>Actual rows</span>
+          <span class="legend-note">log scale</span>
+        </div>
+        <div class="segmented" role="group" aria-label="Plan view">
+          <button type="button" data-view="tree" aria-pressed="true">Tree</button>
+          <button type="button" data-view="text" aria-pressed="false">Text</button>
+        </div>
+      </div>
+      <div class="plan-view">
+        <div id="plan-tree" class="plan-scroll"><p class="note">Run a query to see its plan.</p></div>
+        <pre id="plan-text" class="plan-text" hidden></pre>
+        <div id="plan-tooltip" class="tooltip" role="tooltip" hidden></div>
+      </div>
     </section>
 
     <section class="panel results" aria-labelledby="results-heading">

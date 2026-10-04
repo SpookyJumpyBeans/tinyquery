@@ -28,7 +28,7 @@ from pathlib import Path
 from tinydelta import DeltaTable, Schema
 from tinyquery.catalog import Catalog
 from tinyquery.engine import explain_analyze
-from tinyquery.profiler import format_analyze
+from tinyquery.profiler import MISESTIMATE_FACTOR, format_analyze
 from tinyquery.schema import Column, Row
 from tinyquery.schema import Schema as RowSchema
 
@@ -165,8 +165,8 @@ def run(
 ) -> str:
     """Run `sql` under EXPLAIN ANALYZE against `orders` at `version`.
 
-    Returns JSON: columns, rows, the plan tree, the text rendering of it, and
-    the version actually read. Any failure comes back as {"error": ...} rather
+    Returns JSON: columns, rows, the plan tree, the text rendering of it, the
+    version actually read, and the factor at which a misestimate is flagged. Any failure comes back as {"error": ...} rather
     than an exception, so the page has one shape to handle.
     """
     try:
@@ -184,6 +184,8 @@ def run(
             "rows": [list(row) for row in result.rows],
             "plan": result.plan.to_dict(),
             "text": format_analyze(result.plan),
+            # So the page flags exactly the nodes the text output flags.
+            "misestimate_factor": MISESTIMATE_FACTOR,
         }
     )
 

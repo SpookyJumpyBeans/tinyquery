@@ -8,6 +8,12 @@
   --accent-text: #ffffff;
   --code-bg: #f0f0ec;
   --error: #b42318;
+  /* Plan bars: categorical slots 1 and 2, validated as a pair in both modes. */
+  --series-act: #2a78d6;
+  --series-est: #eb6834;
+  --critical: #d03b3b;
+  --grid: #ecebe7;
+  --row-hover: #f3f3ef;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   color-scheme: light;
@@ -24,6 +30,11 @@
     --accent-text: #0d1020;
     --code-bg: #26262a;
     --error: #ff8a80;
+    --series-act: #3987e5;
+    --series-est: #d95926;
+    --critical: #e66767;
+    --grid: #2a2a2e;
+    --row-hover: #232327;
     color-scheme: dark;
   }
 }
@@ -60,9 +71,9 @@ a { color: var(--accent); }
   gap: 16px;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   grid-template-areas:
-    "query plan"
-    "results plan"
-    "tables plan";
+    "query results"
+    "plan plan"
+    "tables tables";
   align-items: start;
 }
 
@@ -185,4 +196,142 @@ th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
 
 @media (prefers-reduced-motion: reduce) {
   .refreshed { animation: none; }
+}
+
+/* ---------------------------------------------------------------- plan tree */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-right: auto;
+  margin-left: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.swatch {
+  display: inline-block;
+  width: 12px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 0 4px 4px 0;
+  vertical-align: 1px;
+}
+
+.swatch.est, .bar-line.est .bar { background: var(--series-est); }
+.swatch.act, .bar-line.act .bar { background: var(--series-act); }
+
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px; }
+
+.segmented button {
+  font: 12px var(--sans);
+  padding: 3px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.segmented button + button { border-left: 1px solid var(--border); }
+.segmented button[aria-pressed="true"] { background: var(--code-bg); color: var(--text); font-weight: 600; }
+
+.plan-view { position: relative; border-radius: 6px; container: plan / inline-size; }
+.plan-scroll { overflow-x: auto; }
+
+.plan-table { min-width: 720px; border-collapse: collapse; }
+.plan-table th { font-size: 12px; vertical-align: bottom; }
+.plan-table td { padding: 5px 10px; vertical-align: middle; }
+.plan-table tbody tr:hover, .plan-table tbody tr:focus { background: var(--row-hover); outline: none; }
+.plan-table tbody tr:focus-visible { box-shadow: inset 2px 0 0 var(--accent); }
+
+.op { font-family: var(--mono); font-size: 12.5px; }
+.guide { color: var(--muted); white-space: pre; }
+.op-name { font-weight: 600; }
+.op-detail { color: var(--muted); }
+
+.rows-head, .bars { width: 38%; min-width: 240px; }
+
+/* Leave room right of the plot for the value printed at a bar's tip. */
+.plot { position: relative; margin-right: 52px; }
+.axis { height: 16px; }
+.tick { position: absolute; bottom: 0; transform: translateX(-50%); font-weight: 400; font-variant-numeric: tabular-nums; }
+.grid { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+
+.bar-line { position: relative; height: 10px; }
+.bar-line + .bar-line { margin-top: 2px; }
+.bar {
+  position: absolute;
+  left: 0;
+  top: 1px;
+  height: 8px;
+  border-radius: 0 4px 4px 0; /* rounded data end, square at the baseline */
+}
+
+.tip {
+  position: absolute;
+  top: -2px;
+  padding-left: 5px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.bar-line.act .tip { color: var(--text); }
+
+.error { font-size: 12.5px; }
+.error-exact, .error-minor { color: var(--muted); }
+.flag { font-weight: 600; }
+.flag-icon { color: var(--critical); }
+
+.tooltip {
+  position: absolute;
+  z-index: 2;
+  min-width: 220px;
+  max-width: 340px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.15);
+  pointer-events: none;
+  font-size: 12px;
+}
+
+.tt-title { font-family: var(--mono); font-weight: 600; margin-bottom: 6px; overflow-wrap: anywhere; }
+.tooltip dl { display: grid; grid-template-columns: auto auto; gap: 2px 16px; margin: 0; }
+.tooltip dt { color: var(--muted); }
+.tooltip dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Narrow: one operator per block, bars full width beneath its name, so the
+   bars stay on screen instead of behind a horizontal scroll. */
+@container plan (max-width: 640px) {
+  .plan-table, .plan-table thead, .plan-table tbody { display: block; min-width: 0; }
+  .plan-table thead tr { display: block; }
+  .plan-table thead th:not(.rows-head) { display: none; }
+  .plan-table thead .rows-head { display: block; padding: 0 10px 4px; border: 0; }
+  .plan-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "op op" "bars bars" "error time";
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .plan-table td { border: 0; padding: 2px 10px; }
+  .plan-table .op { grid-area: op; white-space: normal; }
+  .plan-table .bars { grid-area: bars; width: auto; min-width: 0; }
+  .plan-table .error { grid-area: error; }
+  .plan-table td.num { grid-area: time; }
+  .rows-head, .bars { width: auto; min-width: 0; }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }

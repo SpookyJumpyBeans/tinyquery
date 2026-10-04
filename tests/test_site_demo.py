@@ -94,5 +94,5 @@ def test_build_bundles_both_packages_and_the_demo(tmp_path):
     names = set(zipfile.ZipFile(bundle).namelist())
     assert {"demo.py", "tinyquery/engine.py", "tinydelta/log.py"} <= names
     assert not any("__pycache__" in name for name in names)
-    for page in ("index.html", "style.css", "app.js"):
+    for page in ("index.html", "style.css", "app.js", "plan.js"):
         assert (tmp_path / "site" / page).is_file()
