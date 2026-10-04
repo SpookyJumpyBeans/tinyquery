@@ -256,7 +256,7 @@ SQL
 
 `ORDER BY` alone uses a blocking `Sort` (memory O(n)). `ORDER BY` + `LIMIT` becomes `TopK`: still one pass over the child, but the heap only keeps k rows. `LIMIT` alone just stops after n rows.
 
-The planner splits `WHERE` on `AND` and attaches each piece to the lowest input whose columns can resolve it. That is the same idea as predicate pushdown in Spark; there is no cost-based optimizer.
+The planner splits `WHERE` on `AND` and attaches each piece to the lowest input whose columns can resolve it. That is the same idea as predicate pushdown in Spark. Join order is the one cost-based decision: the filtered row counts from pushdown feed the Selinger search described above.
 
 ## Example
 

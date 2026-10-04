@@ -428,8 +428,8 @@ class _OrderKey:
 class Sort(Operator):
     """Blocking sort: read the child fully, then emit in order.
 
-    LIMIT after this still pays for the full sort. A real engine would keep a heap
-    of size LIMIT; we do not.
+    Memory is O(n). The planner only uses this for ORDER BY without LIMIT; with a
+    LIMIT it picks TopK, which keeps a heap of k rows instead.
     """
 
     def __init__(self, child: Operator, keys: list[Expr], descending: list[bool]) -> None:
