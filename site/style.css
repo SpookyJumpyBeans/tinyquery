@@ -175,3 +175,14 @@ th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
   background: var(--code-bg);
   color: var(--muted);
 }
+
+.refreshed { animation: refreshed 0.6s ease-out; }
+
+@keyframes refreshed {
+  from { box-shadow: 0 0 0 2px var(--accent); }
+  to { box-shadow: 0 0 0 2px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refreshed { animation: none; }
+}

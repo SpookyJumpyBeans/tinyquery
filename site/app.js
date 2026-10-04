@@ -69,26 +69,59 @@ function renderPresets(presets) {
   el.sql.value = presets[0].sql;
 }
 
-function runQuery() {
-  if (!demo) return;
-  const started = performance.now();
-  const result = JSON.parse(demo.run(el.sql.value));
-  const elapsed = performance.now() - started;
+let runCount = 0;
+let running = false;
 
-  if (result.error) {
-    setStatus("Query failed", true);
-    const message = document.createElement("p");
-    message.className = "error-text";
-    message.textContent = result.error;
-    el.results.replaceChildren(message);
-    el.plan.textContent = "";
-    return;
+// Python runs on the main thread, so the page cannot repaint until a query
+// finishes. Wait for a frame first, or "Running…" would never be seen.
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
+
+async function runQuery() {
+  if (!demo || running) return;
+  running = true;
+  el.run.disabled = true;
+  el.run.textContent = "Running…";
+  setStatus("Running…");
+  await nextFrame();
+
+  try {
+    const started = performance.now();
+    const result = JSON.parse(demo.run(el.sql.value));
+    const elapsed = performance.now() - started;
+    runCount += 1;
+
+    if (result.error) {
+      setStatus(`Run ${runCount}: query failed`, true);
+      const message = document.createElement("p");
+      message.className = "error-text";
+      message.textContent = result.error;
+      el.results.replaceChildren(message);
+      el.plan.textContent = "";
+    } else {
+      const n = result.rows.length;
+      setStatus(
+        `Run ${runCount}: ${n.toLocaleString()} row${n === 1 ? "" : "s"} in ` +
+          `${elapsed.toFixed(0)}ms, orders v${result.version}`,
+      );
+      el.plan.textContent = result.text;
+      renderRows(result.columns, result.rows);
+    }
+    flash(el.plan, el.results);
+  } finally {
+    running = false;
+    el.run.disabled = false;
+    el.run.textContent = "Run";
   }
+}
 
-  const n = result.rows.length;
-  setStatus(`${n.toLocaleString()} row${n === 1 ? "" : "s"} in ${elapsed.toFixed(0)}ms, orders v${result.version}`);
-  el.plan.textContent = result.text;
-  renderRows(result.columns, result.rows);
+// Re-running a query often produces the same rows and nearly the same plan,
+// so mark the panels as refreshed or the click looks like it did nothing.
+function flash(...panels) {
+  for (const panel of panels) {
+    panel.classList.remove("refreshed");
+    void panel.offsetWidth; // restart the animation
+    panel.classList.add("refreshed");
+  }
 }
 
 function renderRows(columns, rows) {
