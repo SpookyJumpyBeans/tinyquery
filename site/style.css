@@ -1,0 +1,177 @@
+:root {
+  --bg: #f7f7f5;
+  --panel: #ffffff;
+  --text: #1d1d1f;
+  --muted: #62626a;
+  --border: #e2e2de;
+  --accent: #2f5fd0;
+  --accent-text: #ffffff;
+  --code-bg: #f0f0ec;
+  --error: #b42318;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #141416;
+    --panel: #1c1c1f;
+    --text: #ececef;
+    --muted: #9d9da6;
+    --border: #2e2e33;
+    --accent: #7aa2ff;
+    --accent-text: #0d1020;
+    --code-bg: #26262a;
+    --error: #ff8a80;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 var(--sans);
+}
+
+code, pre, textarea { font-family: var(--mono); font-size: 13px; }
+
+a { color: var(--accent); }
+
+.masthead {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 16px 8px;
+}
+
+.masthead h1 { margin: 0 0 8px; font-size: 26px; letter-spacing: -0.01em; }
+.masthead .plus { color: var(--muted); font-weight: 400; }
+.lede { max-width: 70ch; margin: 0 0 8px; color: var(--muted); }
+.links { display: flex; gap: 16px; margin: 0; }
+
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "query plan"
+    "results plan"
+    "tables plan";
+  align-items: start;
+}
+
+.query { grid-area: query; }
+.plan { grid-area: plan; }
+.results { grid-area: results; }
+.tables { grid-area: tables; }
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "query" "plan" "results" "tables";
+  }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+
+.presets button {
+  font: 12px var(--sans);
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.presets button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+
+textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+
+#run {
+  font: 600 14px var(--sans);
+  padding: 7px 18px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+}
+
+#run:disabled { opacity: 0.5; cursor: default; }
+.hint { color: var(--muted); font-size: 12px; }
+.status { margin-left: auto; color: var(--muted); font-size: 13px; text-align: right; }
+.status.error { color: var(--error); }
+
+.plan-text {
+  margin: 0;
+  padding: 12px;
+  overflow-x: auto;
+  background: var(--code-bg);
+  border-radius: 6px;
+  line-height: 1.6;
+}
+
+.results-body { overflow-x: auto; }
+
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { padding: 6px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+th { font-weight: 600; color: var(--muted); }
+th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+.error-text { color: var(--error); font-family: var(--mono); font-size: 13px; white-space: pre-wrap; margin: 0; }
+
+.table-list { margin: 0; }
+.table-list dt { font-weight: 600; margin-top: 8px; }
+.table-list dt:first-child { margin-top: 0; }
+.table-list dd { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+
+.tag {
+  font: 600 11px var(--sans);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--muted);
+}

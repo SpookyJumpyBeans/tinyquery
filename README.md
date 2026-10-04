@@ -207,6 +207,24 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## In the browser
+
+`site/` is a static page that runs tinyquery and tinydelta in the browser with
+[Pyodide](https://pyodide.org). It builds a small shop -- a tinydelta `orders`
+table with six versions, plus customers and line items -- and runs every query
+under `EXPLAIN ANALYZE`.
+
+```bash
+pip install -e ".[delta]"
+python site/build.py
+python -m http.server -d _site
+```
+
+Pyodide has no hard links, and tinydelta publishes a commit by linking a
+finished temp file to its version name. The demo stands in with exclusive
+create plus copy, which is only safe because a browser tab runs one Python
+thread. Run natively, the real `link()` is used.
+
 ## How a query runs
 
 ```text
