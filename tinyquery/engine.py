@@ -8,8 +8,10 @@ from tinyquery.profiler import AnalyzeResult, profile_plan
 from tinyquery.schema import Row, Schema
 
 
-def compile_sql(catalog: Catalog, sql: str, reorder: bool = True) -> Operator:
-    return plan(catalog, parse(sql), reorder=reorder)
+def compile_sql(
+    catalog: Catalog, sql: str, reorder: bool = True, pushdown: bool = True
+) -> Operator:
+    return plan(catalog, parse(sql), reorder=reorder, pushdown=pushdown)
 
 
 def collect(operator: Operator) -> tuple[list[Row], Schema]:
@@ -26,12 +28,16 @@ def collect(operator: Operator) -> tuple[list[Row], Schema]:
     return rows, operator.schema
 
 
-def execute(catalog: Catalog, sql: str, reorder: bool = True) -> tuple[list[Row], Schema]:
-    return collect(compile_sql(catalog, sql, reorder=reorder))
+def execute(
+    catalog: Catalog, sql: str, reorder: bool = True, pushdown: bool = True
+) -> tuple[list[Row], Schema]:
+    return collect(compile_sql(catalog, sql, reorder=reorder, pushdown=pushdown))
 
 
-def explain(catalog: Catalog, sql: str, reorder: bool = True) -> str:
-    return format_explain(compile_sql(catalog, sql, reorder=reorder))
+def explain(
+    catalog: Catalog, sql: str, reorder: bool = True, pushdown: bool = True
+) -> str:
+    return format_explain(compile_sql(catalog, sql, reorder=reorder, pushdown=pushdown))
 
 
 def format_explain(operator: Operator, indent: int = 0) -> str:
@@ -41,6 +47,8 @@ def format_explain(operator: Operator, indent: int = 0) -> str:
     return "\n".join(lines)
 
 
-def explain_analyze(catalog: Catalog, sql: str, reorder: bool = True) -> AnalyzeResult:
+def explain_analyze(
+    catalog: Catalog, sql: str, reorder: bool = True, pushdown: bool = True
+) -> AnalyzeResult:
     """Run the query and return its rows plus per-operator estimates and timings."""
-    return profile_plan(compile_sql(catalog, sql, reorder=reorder))
+    return profile_plan(compile_sql(catalog, sql, reorder=reorder, pushdown=pushdown))

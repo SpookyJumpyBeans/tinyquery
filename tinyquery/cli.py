@@ -56,6 +56,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="join tables in the order written instead of asking the cost model",
     )
+    parser.add_argument(
+        "--no-pushdown",
+        action="store_true",
+        help="keep WHERE filters above the joins instead of pushing them down",
+    )
     args = parser.parse_args(argv)
 
     catalog = Catalog()
@@ -81,9 +86,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"-- {name.strip()} at version {version}", file=sys.stderr)
 
     reorder = not args.no_reorder
+    pushdown = not args.no_pushdown
     try:
         if args.analyze:
-            result = explain_analyze(catalog, args.sql, reorder=reorder)
+            result = explain_analyze(catalog, args.sql, reorder=reorder, pushdown=pushdown)
             if args.json:
                 print(json.dumps({
                     "columns": result.schema.names(),
@@ -96,9 +102,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"({n} row{'s' if n != 1 else ''})")
             return 0
         if args.explain:
-            print(explain(catalog, args.sql, reorder=reorder))
+            print(explain(catalog, args.sql, reorder=reorder, pushdown=pushdown))
             return 0
-        rows, schema = execute(catalog, args.sql, reorder=reorder)
+        rows, schema = execute(catalog, args.sql, reorder=reorder, pushdown=pushdown)
         print(_format_table(rows, schema))
         return 0
     except TinyQueryError as exc:
