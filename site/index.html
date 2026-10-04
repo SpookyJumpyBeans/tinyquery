@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tinyquery + tinydelta</title>
+  <meta name="description" content="A small SQL engine and table format, running in your browser with Pyodide.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="masthead">
+    <h1>tinyquery <span class="plus">+</span> tinydelta</h1>
+    <p class="lede">
+      A SQL engine and a table format, both written from scratch in Python,
+      running in this tab with Pyodide. Every query runs under
+      <code>EXPLAIN ANALYZE</code>, so you can see what the planner expected
+      next to what actually happened.
+    </p>
+    <p class="links">
+      <a href="https://github.com/SpookyJumpyBeans/tinyquery">tinyquery</a>
+      <a href="https://github.com/SpookyJumpyBeans/tinydelta">tinydelta</a>
+    </p>
+  </header>
+
+  <main class="layout">
+    <section class="panel query" aria-labelledby="query-heading">
+      <div class="panel-head">
+        <h2 id="query-heading">Query</h2>
+        <div class="presets" id="presets" role="group" aria-label="Example queries"></div>
+      </div>
+      <textarea id="sql" spellcheck="false" autocomplete="off" rows="8"
+                aria-label="SQL query" disabled></textarea>
+      <div class="actions">
+        <button id="run" type="button" disabled>Run</button>
+        <span class="hint">Ctrl+Enter</span>
+        <span id="status" class="status" role="status">Loading Python…</span>
+      </div>
+    </section>
+
+    <section class="panel plan" aria-labelledby="plan-heading">
+      <h2 id="plan-heading">Plan</h2>
+      <pre id="plan" class="plan-text">Run a query to see its plan.</pre>
+    </section>
+
+    <section class="panel results" aria-labelledby="results-heading">
+      <h2 id="results-heading">Result</h2>
+      <div id="results" class="results-body"></div>
+    </section>
+
+    <section class="panel tables" aria-labelledby="tables-heading">
+      <h2 id="tables-heading">Tables</h2>
+      <dl class="table-list">
+        <dt><code>orders</code> <span class="tag">tinydelta</span></dt>
+        <dd><code>id, customer_id, region, year</code>; <span id="orders-history">loading…</span></dd>
+        <dt><code>customers</code></dt>
+        <dd><code>id, name, tier</code>; 200 rows, only 2 of them platinum</dd>
+        <dt><code>lineitem</code></dt>
+        <dd><code>order_id, sku, revenue</code>; 4 items per order</dd>
+      </dl>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
