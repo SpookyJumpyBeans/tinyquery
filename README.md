@@ -27,14 +27,14 @@ with every query's plan drawn as estimated vs actual rows.
 - Reading [tinydelta](https://github.com/SpookyJumpyBeans/tinydelta) tables, at
   the latest version or any older one
 
-Tables are CSV files -- one per table, header row required -- or tinydelta
+Tables are CSV files (one per table, header row required) or tinydelta
 tables, where a commit log decides which data files a scan can see.
 
 ## Querying a tinydelta table
 
 `tinydelta` is the storage layer: a directory of data files plus an atomic JSON
 commit log. `tinyquery` is the engine. Together they are the two halves of a
-very small lakehouse -- storage decides *what is visible*, the engine decides
+very small lakehouse: storage decides *what is visible*, the engine decides
 *how to compute it*.
 
 ```bash
@@ -45,7 +45,7 @@ python -m tinyquery --table orders=./orders \
 ```
 
 Because the log is the source of truth, a scan only ever sees rows some commit
-published -- never a half-written file, and never one a later `overwrite`
+published: never a half-written file, and never one a later `overwrite`
 removed. Pointing at an older version makes time travel a plain `SELECT`:
 
 ```bash
@@ -220,8 +220,8 @@ pytest
 
 [Live demo.](https://spookyjumpybeans.github.io/tinyquery/) `site/` is a static
 page that runs tinyquery and tinydelta in the browser with
-[Pyodide](https://pyodide.org). It builds a small shop -- a tinydelta `orders`
-table with six versions, plus customers and line items -- and runs every query
+[Pyodide](https://pyodide.org). It builds a small shop (a tinydelta `orders`
+table with six versions, plus customers and line items) and runs every query
 under `EXPLAIN ANALYZE`. The plan is drawn as a tree, with estimated and actual
 rows as paired bars on one log scale, and any operator off by 10x or more is
 flagged, the same as in the text output. A timeline under the query moves
